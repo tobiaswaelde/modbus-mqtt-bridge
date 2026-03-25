@@ -1,7 +1,3 @@
-mod bridge;
-mod config;
-mod modbus_codec;
-
 use std::{fs, path::Path, path::PathBuf};
 
 use anyhow::{Context, Result};
@@ -12,7 +8,7 @@ use tokio::{
 };
 use tracing_subscriber::{EnvFilter, fmt};
 
-use crate::config::AppConfig;
+use modbus_mqtt_bridge::{bridge, config::AppConfig};
 
 // Bundled starter config written on first boot for easier local setup.
 const EXAMPLE_CONFIG: &str = include_str!("../config/config.yml");

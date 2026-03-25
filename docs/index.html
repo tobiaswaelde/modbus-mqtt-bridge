@@ -28,9 +28,12 @@
         <a href="#overview">Overview</a>
         <a href="#getting-started">Getting Started</a>
         <a href="#concepts">Concepts</a>
+        <a href="#architecture">Architecture</a>
+        <a href="#recipes">Recipes</a>
         <a href="#topic-contract">Topic Contract</a>
         <a href="#configuration">Configuration</a>
         <a href="#docker">Docker</a>
+        <a href="#troubleshooting">Troubleshooting</a>
         <a href="#operations">Operations</a>
         <a href="#links">Links</a>
       </aside>
@@ -72,6 +75,81 @@
           <p>
             Each source is isolated in its own task so one slow device does not block all others.
           </p>
+        </section>
+
+        <section id="architecture">
+          <h2>Architecture</h2>
+          <p>
+            The bridge sits between Modbus devices and MQTT consumers. It polls device registers,
+            publishes state updates, and listens for write requests on matching <code>/set</code> topics.
+          </p>
+          <figure class="diagram">
+            <pre><code>┌──────────────────┐      Modbus TCP       ┌────────────────────────┐
+│ PLC / inverter / │  <----------------->  │ Modbus MQTT Bridge     │
+│ meter / sensor   │                      │  - polls points         │
+└──────────────────┘                      │  - validates writes     │
+                                           │  - publishes MQTT state │
+                                           └───────────┬────────────┘
+                                                       │ MQTT
+                                                       v
+                                           ┌────────────────────────┐
+                                           │ MQTT broker            │
+                                           └───────────┬────────────┘
+                                                       │
+                         ┌─────────────────────────────┼─────────────────────────────┐
+                         v                             v                             v
+                 Home Assistant                 Node-RED flows                 Mosquitto tools</code></pre>
+          </figure>
+        </section>
+
+        <section id="recipes">
+          <h2>Practical Recipes</h2>
+          <p>These patterns cover the most common integrations without changing the bridge itself.</p>
+
+          <div class="recipe-list">
+            <article class="recipe">
+              <h3>Home Assistant</h3>
+              <p>
+                Use MQTT entities that point at the bridge's state topic and write to the matching
+                <code>/set</code> topic for controls.
+              </p>
+              <pre><code>mqtt:
+  sensor:
+    - name: "Boiler Temperature"
+      state_topic: "modbus/example-device/telemetry/boiler_temp"
+      unit_of_measurement: "°C"
+      device_class: temperature
+      state_class: measurement
+
+  switch:
+    - name: "Pump Enable"
+      state_topic: "modbus/example-device/controls/pump_enable"
+      command_topic: "modbus/example-device/controls/pump_enable/set"
+      payload_on: "true"
+      payload_off: "false"</code></pre>
+            </article>
+
+            <article class="recipe">
+              <h3>Node-RED</h3>
+              <p>
+                Subscribe to the state topic, transform values in a function node, then publish a
+                command on the paired <code>/set</code> topic when automation conditions are met.
+              </p>
+              <pre><code>[MQTT in] -> [Function: derive alarm] -> [Switch] -> [MQTT out]
+   topic: modbus/example-device/telemetry/pressure
+                                 topic: modbus/example-device/controls/fan_speed/set</code></pre>
+            </article>
+
+            <article class="recipe">
+              <h3>Mosquitto</h3>
+              <p>
+                For quick validation, use Mosquitto clients to watch state changes and send test writes.
+                This is the fastest way to confirm topic names and payload formats during setup.
+              </p>
+              <pre><code>mosquitto_sub -h localhost -t 'modbus/+/+'
+mosquitto_pub -h localhost -t 'modbus/example-device/controls/pump_enable/set' -m true</code></pre>
+            </article>
+          </div>
         </section>
 
         <section id="topic-contract">
@@ -133,10 +211,27 @@ sources:
           </p>
         </section>
 
+        <section id="troubleshooting">
+          <h2>Troubleshooting</h2>
+          <p>Use this checklist when the bridge starts but data does not move the way you expect.</p>
+          <ul>
+            <li>Confirm the MQTT broker is reachable and the client credentials are correct.</li>
+            <li>Verify the Modbus host, unit ID, and register addresses against the device manual.</li>
+            <li>Check that the topic path exactly matches the configured source and point names.</li>
+            <li>Make sure the target point is writable before sending anything to a <code>/set</code> topic.</li>
+            <li>Watch logs for timeout, decoding, or payload validation errors.</li>
+          </ul>
+          <div class="callout">
+            <strong>Fast isolation tip:</strong> publish a known-good value with <code>mosquitto_pub</code> first.
+            If the write path works there but not from your automation, the issue is likely upstream.
+          </div>
+        </section>
+
         <section id="operations">
           <h2>Operations</h2>
           <ul>
             <li>Run healthcheck manually: <code>modbus-mqtt-bridge --healthcheck --config config/config.yml</code></li>
+            <li>Enable metrics with <code>metrics.enabled: true</code> and scrape <code>http://&lt;host&gt;:9464/</code>.</li>
             <li>Enable JSON logs with <code>logging.json: true</code>.</li>
             <li>Override log level with <code>RUST_LOG</code> when needed.</li>
           </ul>

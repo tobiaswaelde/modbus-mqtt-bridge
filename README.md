@@ -2,7 +2,7 @@
 
 [![Test](https://github.com/tobiaswaelde/modbus-mqtt-bridge/actions/workflows/test.yml/badge.svg)](https://github.com/tobiaswaelde/modbus-mqtt-bridge/actions/workflows/test.yml)
 [![Docker](https://github.com/tobiaswaelde/modbus-mqtt-bridge/actions/workflows/docker.yml/badge.svg)](https://github.com/tobiaswaelde/modbus-mqtt-bridge/actions/workflows/docker.yml)
-[![Version](https://img.shields.io/badge/version-0.1.0-blue.svg)](https://github.com/tobiaswaelde/modbus-mqtt-bridge/blob/master/Cargo.toml)
+[![Version](https://img.shields.io/badge/version-0.2.0-blue.svg)](https://github.com/tobiaswaelde/modbus-mqtt-bridge/blob/master/Cargo.toml)
 [![Built with AI](https://img.shields.io/badge/built%20with-AI-0a7ea4.svg)](https://openai.com/)
 
 🔌 A lightweight Rust service that connects Modbus TCP devices to MQTT.
@@ -40,6 +40,9 @@ Changelog: [CHANGELOG.md](/mnt/projects/tmp/modbus-test/CHANGELOG.md)
 - 🔢 Supports `bool`, `u16`, `i16`, `u32`, `i32`, `f32`, `string`, and raw register arrays
 - 📬 Publishes plain JSON values to MQTT topics
 - ✍️ Accepts MQTT `/set` topics for writable points
+- 🔁 Resubscribes `/set` topics automatically after MQTT reconnects
+- 🛟 Retries Modbus operations with configurable backoff
+- 📈 Optional Prometheus-compatible metrics endpoint
 - 🐳 Docker-friendly defaults
 
 ## 🧠 How It Works
@@ -129,6 +132,10 @@ logging:
   level: info                     # Optional. Typical values: trace, debug, info, warn, error.
   json: false                     # Optional. true = JSON logs, false = human-readable logs.
 
+metrics:
+  enabled: false                  # Optional. Default: false. Exposes metrics endpoint when true.
+  bind: 0.0.0.0:9464              # Optional. Default: 0.0.0.0:9464.
+
 sources:
   - id: example-device            # Required. Used in MQTT topics.
     host: 127.0.0.1               # Required. Modbus TCP device hostname or IP.
@@ -136,6 +143,8 @@ sources:
     unit_id: 1                    # Required. Modbus slave/unit id.
     poll_interval_ms: 2000        # Optional. Default: 1000.
     request_timeout_ms: 3000      # Optional. Default: 3000.
+    modbus_retries: 3             # Optional. Default: 0. Additional retry attempts per Modbus operation.
+    modbus_retry_backoff_ms: 250  # Optional. Default: 250. Exponential backoff base in ms.
     points:
       - name: example_float       # Required. Human-friendly point name.
         topic: telemetry/example_float  # Required. Appended under <base_topic>/<source_id>/...
@@ -169,6 +178,8 @@ Notes:
 - `encoding` is mainly relevant for multi-register values like `u32`, `i32`, `f32`, and some string layouts.
 - `scale` and `offset` affect values when reading from Modbus. They are useful for sensors that store engineering values in raw units.
 - `count` defaults to the natural width of the selected `data_type`, but you can override it for strings and raw register arrays.
+- `modbus_retries` and `modbus_retry_backoff_ms` make transient network/device failures much more tolerant.
+- Set `metrics.enabled: true` to expose counters for poll success/failure, RPC write success/failure, and MQTT reconnects.
 
 ## 🚀 Run Locally
 
@@ -207,6 +218,7 @@ The compose file mounts the local `config/` directory into the container, so you
 - `.github/workflows/test.yml` runs formatting, clippy, tests, and a release build on pushes and pull requests
 - `.github/workflows/docker.yml` publishes a Docker image to GHCR using the repository name automatically, for example `ghcr.io/<owner>/<repo>`
 - `.github/workflows/pages.yml` publishes the docs website to GitHub Pages
+- `.github/workflows/release.yml` creates GitHub Releases from semantic version tags (`v*`) and packages release artifacts
 
 ## ⚖️ License
 

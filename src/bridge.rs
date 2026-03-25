@@ -1,9 +1,22 @@
-use std::{net::SocketAddr, sync::Arc, time::Duration};
+use std::{
+    future::Future,
+    net::SocketAddr,
+    sync::{
+        Arc,
+        atomic::{AtomicU64, Ordering},
+    },
+    time::Duration,
+};
 
 use anyhow::{Context, Result, anyhow, bail};
 use rumqttc::{AsyncClient, Event, EventLoop, Incoming, MqttOptions, Publish, QoS};
 use serde_json::Value;
-use tokio::{net::TcpStream, sync::mpsc, time};
+use tokio::{
+    io::AsyncWriteExt,
+    net::{TcpListener, TcpStream},
+    sync::mpsc,
+    time,
+};
 use tokio_modbus::{client::tcp, prelude::*};
 use tracing::{debug, error, info, warn};
 
@@ -34,27 +47,45 @@ pub async fn run(config: AppConfig) -> Result<()> {
     let mqtt_options = mqtt_options(&config);
     let (mqtt_client, mut event_loop) = AsyncClient::new(mqtt_options, 100);
     let mqtt_client = Arc::new(mqtt_client);
+    let metrics = Arc::new(BridgeMetrics::default());
+
+    if config.metrics.enabled {
+        let bind = config.metrics.bind.clone();
+        let metrics_clone = Arc::clone(&metrics);
+        tokio::spawn(async move {
+            if let Err(error) = serve_metrics(bind, metrics_clone).await {
+                error!(error = ?error, "metrics server stopped");
+            }
+        });
+    }
 
     // MQTT message handling is decoupled via channel: event loop receives, worker handles writes.
     let (rpc_tx, mut rpc_rx) = mpsc::channel::<RpcCommand>(100);
-    subscribe_to_rpc_topics(&mqtt_client, &config).await?;
-
-    let event_client = Arc::clone(&mqtt_client);
     let event_config = config.clone();
+    let event_client = Arc::clone(&mqtt_client);
+    let event_metrics = Arc::clone(&metrics);
     tokio::spawn(async move {
         // This task must run continuously; rumqttc drives reconnect behavior via poll().
-        if let Err(error) = drive_mqtt_event_loop(&mut event_loop, rpc_tx, &event_config).await {
+        if let Err(error) = drive_mqtt_event_loop(
+            event_client,
+            &mut event_loop,
+            rpc_tx,
+            &event_config,
+            event_metrics,
+        )
+        .await
+        {
             error!(error = ?error, "mqtt event loop stopped");
         }
-        drop(event_client);
     });
 
     // Each source gets its own polling loop so slow/broken devices do not block others.
     for source in config.sources.iter().cloned() {
         let client = Arc::clone(&mqtt_client);
         let base_topic = config.mqtt.base_topic.clone();
+        let metrics = Arc::clone(&metrics);
         tokio::spawn(async move {
-            poll_source_loop(client, &base_topic, source).await;
+            poll_source_loop(client, &base_topic, source, metrics).await;
         });
     }
 
@@ -67,9 +98,16 @@ pub async fn run(config: AppConfig) -> Result<()> {
             .cloned()
             .ok_or_else(|| anyhow!("received rpc for unknown source '{}'", command.source_id))?;
 
-        if let Err(error) =
-            handle_rpc_command(&mqtt_client, &config.mqtt.base_topic, &source, command).await
+        if let Err(error) = handle_rpc_command(
+            &mqtt_client,
+            &config.mqtt.base_topic,
+            &source,
+            command,
+            &metrics,
+        )
+        .await
         {
+            metrics.rpc_write_failures.fetch_add(1, Ordering::Relaxed);
             error!(source = source.id, error = ?error, "rpc command failed");
         }
     }
@@ -101,7 +139,15 @@ async fn subscribe_to_rpc_topics(client: &AsyncClient, config: &AppConfig) -> Re
             }
             // Writable points expose a corresponding `<state-topic>/set` subscription.
             let topic = set_topic(&config.mqtt.base_topic, &source.id, &point.topic);
-            client.subscribe(topic.clone(), QoS::AtLeastOnce).await?;
+            client
+                .subscribe(topic.clone(), QoS::AtLeastOnce)
+                .await
+                .with_context(|| {
+                    format!(
+                        "failed to subscribe to set topic '{}' for source '{}' point '{}'",
+                        topic, source.id, point.name
+                    )
+                })?;
             info!(
                 source = source.id,
                 point = point.name,
@@ -114,9 +160,11 @@ async fn subscribe_to_rpc_topics(client: &AsyncClient, config: &AppConfig) -> Re
 }
 
 async fn drive_mqtt_event_loop(
+    client: Arc<AsyncClient>,
     event_loop: &mut EventLoop,
     rpc_tx: mpsc::Sender<RpcCommand>,
     config: &AppConfig,
+    metrics: Arc<BridgeMetrics>,
 ) -> Result<()> {
     loop {
         match event_loop.poll().await {
@@ -127,7 +175,11 @@ async fn drive_mqtt_event_loop(
                 }
             }
             Ok(Event::Incoming(Incoming::ConnAck(_))) => {
+                metrics.mqtt_reconnects.fetch_add(1, Ordering::Relaxed);
                 info!("connected to mqtt broker");
+                if let Err(error) = subscribe_to_rpc_topics(&client, config).await {
+                    warn!(error = ?error, "failed to resubscribe rpc topics after mqtt connect");
+                }
             }
             Ok(Event::Outgoing(_)) | Ok(Event::Incoming(_)) => {}
             Err(error) => {
@@ -154,12 +206,13 @@ fn decode_rpc_publish(config: &AppConfig, publish: Publish) -> Result<Option<Rpc
     let mut parts = trimmed.splitn(2, '/');
     let source_id = parts
         .next()
-        .ok_or_else(|| anyhow!("rpc topic missing source id"))?;
+        .ok_or_else(|| anyhow!("rpc topic '{}' missing source id", publish.topic))?;
     let point_topic = parts
         .next()
-        .ok_or_else(|| anyhow!("rpc topic missing point topic"))?;
+        .ok_or_else(|| anyhow!("rpc topic '{}' missing point topic", publish.topic))?;
 
-    let payload = parse_rpc_payload(&publish.payload)?;
+    let payload = parse_rpc_payload(&publish.payload)
+        .with_context(|| format!("invalid rpc payload on topic '{}'", publish.topic))?;
 
     Ok(Some(RpcCommand {
         source_id: source_id.to_string(),
@@ -180,11 +233,16 @@ fn parse_rpc_payload(bytes: &[u8]) -> Result<Value> {
     }
 }
 
-async fn poll_source_loop(client: Arc<AsyncClient>, base_topic: &str, source: SourceConfig) {
+async fn poll_source_loop(
+    client: Arc<AsyncClient>,
+    base_topic: &str,
+    source: SourceConfig,
+    metrics: Arc<BridgeMetrics>,
+) {
     let interval = Duration::from_millis(source.poll_interval_ms);
     loop {
         let started = time::Instant::now();
-        if let Err(error) = poll_source_once(&client, base_topic, &source).await {
+        if let Err(error) = poll_source_once(&client, base_topic, &source, &metrics).await {
             warn!(source = source.id, error = ?error, "poll cycle failed");
         }
 
@@ -200,32 +258,59 @@ async fn poll_source_once(
     client: &AsyncClient,
     base_topic: &str,
     source: &SourceConfig,
+    metrics: &BridgeMetrics,
 ) -> Result<()> {
     for point in &source.points {
         if !point.access.can_read() {
             continue;
         }
 
-        // Read current value from Modbus and publish the raw JSON value to MQTT.
-        let value = read_point(source, point).await?;
-        let topic = state_topic(base_topic, &source.id, &point.topic);
-
-        client
-            .publish(
-                topic.clone(),
-                QoS::AtLeastOnce,
-                point.retain.unwrap_or(true),
-                serde_json::to_vec(&value)?,
-            )
-            .await?;
-        debug!(
-            source = source.id,
-            point = point.name,
-            topic,
-            "published point state"
-        );
+        if let Err(error) = poll_point(client, base_topic, source, point).await {
+            metrics.poll_failures.fetch_add(1, Ordering::Relaxed);
+            warn!(
+                source = source.id,
+                point = point.name,
+                error = ?error,
+                "point poll failed"
+            );
+        } else {
+            metrics.poll_successes.fetch_add(1, Ordering::Relaxed);
+        }
     }
 
+    Ok(())
+}
+
+async fn poll_point(
+    client: &AsyncClient,
+    base_topic: &str,
+    source: &SourceConfig,
+    point: &PointConfig,
+) -> Result<()> {
+    // Read current value from Modbus and publish the raw JSON value to MQTT.
+    let value = read_point(source, point).await?;
+    let topic = state_topic(base_topic, &source.id, &point.topic);
+
+    client
+        .publish(
+            topic.clone(),
+            QoS::AtLeastOnce,
+            point.retain.unwrap_or(true),
+            serde_json::to_vec(&value)?,
+        )
+        .await
+        .with_context(|| {
+            format!(
+                "failed to publish state topic '{}' for source '{}' point '{}'",
+                topic, source.id, point.name
+            )
+        })?;
+    debug!(
+        source = source.id,
+        point = point.name,
+        topic,
+        "published point state"
+    );
     Ok(())
 }
 
@@ -234,6 +319,7 @@ async fn handle_rpc_command(
     base_topic: &str,
     source: &SourceConfig,
     command: RpcCommand,
+    metrics: &BridgeMetrics,
 ) -> Result<()> {
     let point = source
         .points
@@ -247,6 +333,7 @@ async fn handle_rpc_command(
 
     // Write requested value first...
     write_point(source, point, &command.payload).await?;
+    metrics.rpc_write_successes.fetch_add(1, Ordering::Relaxed);
     info!(source = source.id, point = point.name, "write completed");
 
     if point.access.can_read() {
@@ -256,12 +343,18 @@ async fn handle_rpc_command(
 
         client
             .publish(
-                topic,
+                topic.clone(),
                 QoS::AtLeastOnce,
                 point.retain.unwrap_or(true),
                 serde_json::to_vec(&value)?,
             )
-            .await?;
+            .await
+            .with_context(|| {
+                format!(
+                    "failed to publish refreshed state topic '{}' for source '{}' point '{}'",
+                    topic, source.id, point.name
+                )
+            })?;
     }
 
     Ok(())
@@ -271,49 +364,57 @@ async fn read_point(source: &SourceConfig, point: &PointConfig) -> Result<Value>
     let socket_addr: SocketAddr = format!("{}:{}", source.host, source.port).parse()?;
     let timeout = Duration::from_millis(source.request_timeout_ms);
 
-    // Modbus connections are short-lived per request, which keeps reconnect logic simple for containers.
-    let result = time::timeout(timeout, async {
-        let stream = TcpStream::connect(socket_addr).await?;
-        let slave = Slave(source.unit_id);
-        // attach_slave binds the unit id to all subsequent requests on this context.
-        let mut ctx = tcp::attach_slave(stream, slave);
+    retry_modbus_operation(source, point, "read", || async {
+        // Modbus connections are short-lived per request, which keeps reconnect logic simple for containers.
+        let result = time::timeout(timeout, async {
+            let stream = TcpStream::connect(socket_addr).await.with_context(|| {
+                format!(
+                    "failed to connect to modbus source '{}' at {}",
+                    source.id, socket_addr
+                )
+            })?;
+            let slave = Slave(source.unit_id);
+            // attach_slave binds the unit id to all subsequent requests on this context.
+            let mut ctx = tcp::attach_slave(stream, slave);
 
-        match point.kind {
-            RegisterKind::Coil => {
-                let response = ctx
-                    .read_coils(point.address, register_count(point))
-                    .await??;
-                Ok::<_, anyhow::Error>(decode_point(point, Some(&response), None)?)
+            match point.kind {
+                RegisterKind::Coil => {
+                    let response = ctx
+                        .read_coils(point.address, register_count(point))
+                        .await??;
+                    Ok::<_, anyhow::Error>(decode_point(point, Some(&response), None)?)
+                }
+                RegisterKind::DiscreteInput => {
+                    let response = ctx
+                        .read_discrete_inputs(point.address, register_count(point))
+                        .await??;
+                    Ok(decode_point(point, Some(&response), None)?)
+                }
+                RegisterKind::Holding => {
+                    let response = ctx
+                        .read_holding_registers(point.address, register_count(point))
+                        .await??;
+                    Ok(decode_point(point, None, Some(&response))?)
+                }
+                RegisterKind::Input => {
+                    let response = ctx
+                        .read_input_registers(point.address, register_count(point))
+                        .await??;
+                    Ok(decode_point(point, None, Some(&response))?)
+                }
             }
-            RegisterKind::DiscreteInput => {
-                let response = ctx
-                    .read_discrete_inputs(point.address, register_count(point))
-                    .await??;
-                Ok(decode_point(point, Some(&response), None)?)
-            }
-            RegisterKind::Holding => {
-                let response = ctx
-                    .read_holding_registers(point.address, register_count(point))
-                    .await??;
-                Ok(decode_point(point, None, Some(&response))?)
-            }
-            RegisterKind::Input => {
-                let response = ctx
-                    .read_input_registers(point.address, register_count(point))
-                    .await??;
-                Ok(decode_point(point, None, Some(&response))?)
-            }
+        })
+        .await;
+
+        match result {
+            Ok(value) => value,
+            Err(_) => bail!(
+                "modbus read timed out after {} ms",
+                source.request_timeout_ms
+            ),
         }
     })
-    .await;
-
-    match result {
-        Ok(value) => value,
-        Err(_) => bail!(
-            "modbus read timed out after {} ms",
-            source.request_timeout_ms
-        ),
-    }
+    .await
 }
 
 async fn write_point(source: &SourceConfig, point: &PointConfig, payload: &Value) -> Result<()> {
@@ -321,39 +422,105 @@ async fn write_point(source: &SourceConfig, point: &PointConfig, payload: &Value
     let socket_addr: SocketAddr = format!("{}:{}", source.host, source.port).parse()?;
     let timeout = Duration::from_millis(source.request_timeout_ms);
 
-    // Reuse the same one-shot connection strategy for writes to avoid stale sockets.
-    let result = time::timeout(timeout, async {
-        let stream = TcpStream::connect(socket_addr).await?;
-        let slave = Slave(source.unit_id);
-        let mut ctx = tcp::attach_slave(stream, slave);
+    retry_modbus_operation(source, point, "write", || async {
+        // Reuse the same one-shot connection strategy for writes to avoid stale sockets.
+        let result = time::timeout(timeout, async {
+            let stream = TcpStream::connect(socket_addr).await.with_context(|| {
+                format!(
+                    "failed to connect to modbus source '{}' at {}",
+                    source.id, socket_addr
+                )
+            })?;
+            let slave = Slave(source.unit_id);
+            let mut ctx = tcp::attach_slave(stream, slave);
 
-        match encoded {
-            EncodedWrite::Coil(value) => {
-                ctx.write_single_coil(point.address, value).await??;
-            }
-            EncodedWrite::Registers(registers) => {
-                // Use single-register write where possible; fall back to multi-register write otherwise.
-                if registers.len() == 1 {
-                    ctx.write_single_register(point.address, registers[0])
-                        .await??;
-                } else {
-                    ctx.write_multiple_registers(point.address, &registers)
-                        .await??;
+            match &encoded {
+                EncodedWrite::Coil(value) => {
+                    ctx.write_single_coil(point.address, *value).await??;
+                }
+                EncodedWrite::Registers(registers) => {
+                    // Use single-register write where possible; fall back to multi-register write otherwise.
+                    if registers.len() == 1 {
+                        ctx.write_single_register(point.address, registers[0])
+                            .await??;
+                    } else {
+                        ctx.write_multiple_registers(point.address, registers)
+                            .await??;
+                    }
                 }
             }
+
+            Ok::<_, anyhow::Error>(())
+        })
+        .await;
+
+        match result {
+            Ok(value) => value,
+            Err(_) => bail!(
+                "modbus write timed out after {} ms",
+                source.request_timeout_ms
+            ),
         }
-
-        Ok::<_, anyhow::Error>(())
     })
-    .await;
+    .await
+}
 
-    match result {
-        Ok(value) => value,
-        Err(_) => bail!(
-            "modbus write timed out after {} ms",
-            source.request_timeout_ms
-        ),
+async fn retry_modbus_operation<T, F, Fut>(
+    source: &SourceConfig,
+    point: &PointConfig,
+    action: &str,
+    mut operation: F,
+) -> Result<T>
+where
+    F: FnMut() -> Fut,
+    Fut: Future<Output = Result<T>>,
+{
+    let attempts = source.modbus_retries.saturating_add(1);
+
+    for attempt in 0..attempts {
+        match operation().await {
+            Ok(value) => return Ok(value),
+            Err(error) => {
+                let error = error.context(format!(
+                    "modbus {} attempt {}/{} failed for {}",
+                    action,
+                    attempt + 1,
+                    attempts,
+                    point_context(source, point)
+                ));
+
+                if attempt + 1 == attempts {
+                    return Err(error);
+                }
+
+                warn!(
+                    source = source.id,
+                    point = point.name,
+                    action,
+                    attempt = attempt + 1,
+                    retries = source.modbus_retries,
+                    error = ?error,
+                    "modbus request failed, retrying"
+                );
+                time::sleep(modbus_retry_delay(source, attempt)).await;
+            }
+        }
     }
+
+    unreachable!("retry loop must return on success or final error");
+}
+
+fn modbus_retry_delay(source: &SourceConfig, retry_index: u32) -> Duration {
+    let backoff = source.modbus_retry_backoff_ms;
+    let multiplier = 1u64 << retry_index.min(10);
+    Duration::from_millis(backoff.saturating_mul(multiplier))
+}
+
+fn point_context(source: &SourceConfig, point: &PointConfig) -> String {
+    format!(
+        "source '{}' point '{}' ({:?} {:?} @ {})",
+        source.id, point.name, point.kind, point.data_type, point.address
+    )
 }
 
 fn state_topic(base_topic: &str, source_id: &str, point_topic: &str) -> String {
@@ -371,5 +538,55 @@ fn set_topic(base_topic: &str, source_id: &str, point_topic: &str) -> String {
         base_topic.trim_end_matches('/'),
         source_id,
         point_topic.trim_start_matches('/')
+    )
+}
+
+#[derive(Default)]
+struct BridgeMetrics {
+    poll_successes: AtomicU64,
+    poll_failures: AtomicU64,
+    rpc_write_successes: AtomicU64,
+    rpc_write_failures: AtomicU64,
+    mqtt_reconnects: AtomicU64,
+}
+
+async fn serve_metrics(bind: String, metrics: Arc<BridgeMetrics>) -> Result<()> {
+    let listener = TcpListener::bind(&bind)
+        .await
+        .with_context(|| format!("failed to bind metrics endpoint on {}", bind))?;
+    info!(bind, "metrics endpoint listening");
+
+    loop {
+        let (mut stream, _) = listener.accept().await?;
+        let body = render_metrics(&metrics);
+        let response = format!(
+            "HTTP/1.1 200 OK\r\ncontent-type: text/plain; version=0.0.4; charset=utf-8\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{}",
+            body.len(),
+            body
+        );
+        stream.write_all(response.as_bytes()).await?;
+        let _ = stream.shutdown().await;
+    }
+}
+
+fn render_metrics(metrics: &BridgeMetrics) -> String {
+    format!(
+        concat!(
+            "# TYPE modbus_mqtt_poll_success_total counter\n",
+            "modbus_mqtt_poll_success_total {}\n",
+            "# TYPE modbus_mqtt_poll_failure_total counter\n",
+            "modbus_mqtt_poll_failure_total {}\n",
+            "# TYPE modbus_mqtt_rpc_write_success_total counter\n",
+            "modbus_mqtt_rpc_write_success_total {}\n",
+            "# TYPE modbus_mqtt_rpc_write_failure_total counter\n",
+            "modbus_mqtt_rpc_write_failure_total {}\n",
+            "# TYPE modbus_mqtt_mqtt_reconnect_total counter\n",
+            "modbus_mqtt_mqtt_reconnect_total {}\n"
+        ),
+        metrics.poll_successes.load(Ordering::Relaxed),
+        metrics.poll_failures.load(Ordering::Relaxed),
+        metrics.rpc_write_successes.load(Ordering::Relaxed),
+        metrics.rpc_write_failures.load(Ordering::Relaxed),
+        metrics.mqtt_reconnects.load(Ordering::Relaxed),
     )
 }

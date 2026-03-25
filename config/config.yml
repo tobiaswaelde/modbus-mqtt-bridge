@@ -14,6 +14,10 @@ logging:
   level: info
   json: false
 
+metrics:
+  enabled: false
+  bind: 0.0.0.0:9464
+
 sources:
   # Each source represents one Modbus TCP endpoint.
   - id: example-device
@@ -22,6 +26,8 @@ sources:
     unit_id: 1
     poll_interval_ms: 2000
     request_timeout_ms: 3000
+    modbus_retries: 3
+    modbus_retry_backoff_ms: 250
     points:
       # Holding register example mapped to a float value.
       - name: example_float
