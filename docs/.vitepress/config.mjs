@@ -4,13 +4,17 @@ export default {
   description: "Documentation for setup, configuration, operations, and integrations",
   base: "/modbus-mqtt-bridge/",
   cleanUrls: true,
+  lastUpdated: true,
   themeConfig: {
     logo: "/logo.svg",
     nav: [
       { text: "Guide", link: "/" },
       { text: "Configuration", link: "/configuration" },
-      { text: "GitHub", link: "https://github.com/tobiaswaelde/modbus-mqtt-bridge" }
+      { text: "Deployment", link: "/deployment" }
     ],
+    search: {
+      provider: "local"
+    },
     sidebar: [
       { text: "Overview", link: "/" },
       { text: "Getting Started", link: "/getting-started" },
@@ -19,10 +23,15 @@ export default {
       { text: "Recipes", link: "/recipes" },
       { text: "Topic Contract", link: "/topic-contract" },
       { text: "Configuration", link: "/configuration" },
-      { text: "Docker", link: "/docker" },
+      { text: "Deployment", link: "/deployment" },
       { text: "Troubleshooting", link: "/troubleshooting" },
       { text: "Operations", link: "/operations" }
     ],
+    editLink: {
+      pattern: "https://github.com/tobiaswaelde/modbus-mqtt-bridge/edit/master/docs/:path",
+      text: "Edit this page on GitHub"
+    },
+    lastUpdatedText: "Last updated",
     socialLinks: [
       { icon: "github", link: "https://github.com/tobiaswaelde/modbus-mqtt-bridge" }
     ],

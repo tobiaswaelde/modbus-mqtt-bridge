@@ -16,3 +16,4 @@ A lightweight Rust service that bridges Modbus TCP and MQTT.
 - [Architecture](./architecture)
 - [Recipes](./recipes)
 - [Configuration](./configuration)
+- [Deployment](./deployment)
