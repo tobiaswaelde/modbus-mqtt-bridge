@@ -5,7 +5,7 @@ use crate::config::{ByteOrder, DataType, Encoding, PointConfig, RegisterKind, Wo
 
 // Use the explicit register count when present, otherwise infer the usual width from the data type.
 pub fn register_count(point: &PointConfig) -> u16 {
-    point.count.unwrap_or_else(|| match point.data_type {
+    point.count.unwrap_or(match point.data_type {
         DataType::Bool => 1,
         DataType::U16 | DataType::I16 => 1,
         DataType::U32 | DataType::I32 | DataType::F32 => 2,

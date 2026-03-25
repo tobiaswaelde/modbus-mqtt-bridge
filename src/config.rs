@@ -128,16 +128,18 @@ pub enum DataType {
     RawU16,
 }
 
-#[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum ByteOrder {
+    #[default]
     Big,
     Little,
 }
 
-#[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum WordOrder {
+    #[default]
     Big,
     Little,
 }
@@ -221,16 +223,4 @@ fn default_request_timeout_ms() -> u64 {
 
 fn default_log_level() -> String {
     "info".to_string()
-}
-
-impl Default for ByteOrder {
-    fn default() -> Self {
-        Self::Big
-    }
-}
-
-impl Default for WordOrder {
-    fn default() -> Self {
-        Self::Big
-    }
 }
