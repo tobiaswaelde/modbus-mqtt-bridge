@@ -1,0 +1,9 @@
+services:
+  modbus-mqtt-bridge:
+    build:
+      context: .
+    container_name: modbus-mqtt-bridge
+    restart: unless-stopped
+    volumes:
+      - ./config:/app/config:ro
+    command: ["--config", "/app/config/config.yml"]

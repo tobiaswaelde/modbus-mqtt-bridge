@@ -1,0 +1,14 @@
+/target
+/.idea
+/.vscode
+/.DS_Store
+
+# Local runtime config and secrets
+/.env
+/.env.*
+/config/*.local.yml
+/config/*.local.yaml
+/config/*.local.json
+
+# Logs
+/*.log
