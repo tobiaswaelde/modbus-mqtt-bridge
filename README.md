@@ -15,6 +15,8 @@ The checked-in config is intentionally a safe template with placeholder values, 
 
 Full docs website: **https://tobiaswaelde.github.io/modbus-mqtt-bridge/**
 
+Changelog: [CHANGELOG.md](/mnt/projects/tmp/modbus-test/CHANGELOG.md)
+
 ## 📚 Table of Contents
 
 - [✨ Features](#-features)
@@ -26,6 +28,7 @@ Full docs website: **https://tobiaswaelde.github.io/modbus-mqtt-bridge/**
 - [🐳 Run With Docker](#-run-with-docker)
 - [🌐 Documentation Website](#-documentation-website)
 - [🔁 GitHub Actions](#-github-actions)
+- [⚖️ License](#️-license)
 
 ## ✨ Features
 
@@ -204,3 +207,8 @@ The compose file mounts the local `config/` directory into the container, so you
 - `.github/workflows/test.yml` runs formatting, clippy, tests, and a release build on pushes and pull requests
 - `.github/workflows/docker.yml` publishes a Docker image to GHCR using the repository name automatically, for example `ghcr.io/<owner>/<repo>`
 - `.github/workflows/pages.yml` publishes the docs website to GitHub Pages
+
+## ⚖️ License
+
+This project is licensed under **GNU GPL v3.0 or later** (`GPL-3.0-or-later`).
+See [LICENSE](/mnt/projects/tmp/modbus-test/LICENSE).
