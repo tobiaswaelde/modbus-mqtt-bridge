@@ -3,7 +3,10 @@ use serde_json::{Number, Value};
 
 use crate::config::{ByteOrder, DataType, Encoding, PointConfig, RegisterKind, WordOrder};
 
-// Use the explicit register count when present, otherwise infer the usual width from the data type.
+/// Resolves how many 16-bit registers are required for this point.
+///
+/// Uses `point.count` when explicitly configured; otherwise derives the
+/// natural width from `data_type`.
 pub fn register_count(point: &PointConfig) -> u16 {
     point.count.unwrap_or(match point.data_type {
         DataType::Bool => 1,
@@ -14,11 +17,17 @@ pub fn register_count(point: &PointConfig) -> u16 {
     })
 }
 
+/// Decodes a Modbus response into the JSON value that is published to MQTT.
+///
+/// - `bits` is used for coil/discrete-input points
+/// - `registers` is used for holding/input-register points
+/// - optional `scale`/`offset` are applied after decoding numeric values
 pub fn decode_point(
     point: &PointConfig,
     bits: Option<&[bool]>,
     registers: Option<&[u16]>,
 ) -> Result<Value> {
+    // Decode raw Modbus response into a typed JSON value according to point config.
     let raw = match point.kind {
         RegisterKind::Coil | RegisterKind::DiscreteInput => {
             let values = bits.ok_or_else(|| anyhow::anyhow!("missing coil data"))?;
@@ -37,7 +46,11 @@ pub fn decode_point(
     apply_numeric_transform(raw, point.scale, point.offset)
 }
 
+/// Encodes an incoming MQTT write payload into a Modbus write command.
+///
+/// The returned command is either a single coil value or one/multiple registers.
 pub fn encode_write_payload(point: &PointConfig, value: &Value) -> Result<EncodedWrite> {
+    // Convert incoming JSON payload into Modbus write primitives.
     match point.kind {
         RegisterKind::Coil => Ok(EncodedWrite::Coil(coerce_bool(value)?)),
         RegisterKind::DiscreteInput => bail!("cannot write discrete inputs"),
@@ -46,6 +59,7 @@ pub fn encode_write_payload(point: &PointConfig, value: &Value) -> Result<Encode
     }
 }
 
+/// Concrete Modbus write primitive derived from the requested payload.
 pub enum EncodedWrite {
     Coil(bool),
     Registers(Vec<u16>),
@@ -62,6 +76,7 @@ fn decode_registers(point: &PointConfig, registers: &[u16]) -> Result<Value> {
         );
     }
 
+    // Ignore trailing registers if a device returns more than requested.
     let slice = &registers[..count];
 
     match point.data_type {
@@ -112,6 +127,7 @@ fn encode_holding_write(point: &PointConfig, value: &Value) -> Result<EncodedWri
                 .as_str()
                 .ok_or_else(|| anyhow::anyhow!("expected string payload"))?;
             let count = register_count(point) as usize;
+            // String writes are fixed-width at register level; extra bytes are truncated/padded.
             bytes_to_registers(text.as_bytes(), count, point.encoding)
         }
         DataType::RawU16 => {
@@ -144,6 +160,7 @@ fn join_u32(words: &[u16], encoding: Encoding) -> u32 {
 
 fn split_u32(value: u32, encoding: Encoding) -> Vec<u16> {
     let bytes = value.to_be_bytes();
+    // Internal conversion starts from big-endian network order, then remaps by encoding options.
     let regs = bytes_to_registers(
         &bytes,
         2,
@@ -200,6 +217,7 @@ fn apply_numeric_transform(value: Value, scale: Option<f64>, offset: Option<f64>
 
     match value {
         Value::Number(number) => {
+            // Transformation is read-side only: (raw * scale) + offset.
             let mut result = number
                 .as_f64()
                 .ok_or_else(|| anyhow::anyhow!("failed to convert number to f64"))?;
@@ -223,6 +241,7 @@ fn coerce_bool(value: &Value) -> Result<bool> {
         Value::Number(value) => Ok(value.as_i64().unwrap_or_default() != 0),
         Value::String(value) => {
             let normalized = value.trim().to_ascii_lowercase();
+            // Accept common command aliases used by MQTT dashboards and automation tools.
             match normalized.as_str() {
                 "1" | "true" | "on" | "yes" => Ok(true),
                 "0" | "false" | "off" | "no" => Ok(false),

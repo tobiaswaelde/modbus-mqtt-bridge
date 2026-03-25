@@ -12,7 +12,10 @@ use crate::{
     modbus_codec::{EncodedWrite, decode_point, encode_write_payload, register_count},
 };
 
-// MQTT write requests are dispatched onto an internal channel so the event loop stays responsive.
+/// Internal command payload for MQTT `/set` messages.
+///
+/// The event loop decodes incoming MQTT publishes into this structure and forwards
+/// them to the write handler via channel.
 #[derive(Debug, Clone)]
 pub struct RpcCommand {
     pub source_id: String,
@@ -20,23 +23,33 @@ pub struct RpcCommand {
     pub payload: Value,
 }
 
+/// Starts the bridge runtime.
+///
+/// This sets up:
+/// - one shared MQTT client and event loop
+/// - one polling task per configured Modbus source
+/// - one command-processing loop for incoming `/set` writes
 pub async fn run(config: AppConfig) -> Result<()> {
+    // One MQTT client is shared by polling tasks and RPC write handling.
     let mqtt_options = mqtt_options(&config);
     let (mqtt_client, mut event_loop) = AsyncClient::new(mqtt_options, 100);
     let mqtt_client = Arc::new(mqtt_client);
 
+    // MQTT message handling is decoupled via channel: event loop receives, worker handles writes.
     let (rpc_tx, mut rpc_rx) = mpsc::channel::<RpcCommand>(100);
     subscribe_to_rpc_topics(&mqtt_client, &config).await?;
 
     let event_client = Arc::clone(&mqtt_client);
     let event_config = config.clone();
     tokio::spawn(async move {
+        // This task must run continuously; rumqttc drives reconnect behavior via poll().
         if let Err(error) = drive_mqtt_event_loop(&mut event_loop, rpc_tx, &event_config).await {
             error!(error = ?error, "mqtt event loop stopped");
         }
         drop(event_client);
     });
 
+    // Each source gets its own polling loop so slow/broken devices do not block others.
     for source in config.sources.iter().cloned() {
         let client = Arc::clone(&mqtt_client);
         let base_topic = config.mqtt.base_topic.clone();
@@ -46,6 +59,7 @@ pub async fn run(config: AppConfig) -> Result<()> {
     }
 
     while let Some(command) = rpc_rx.recv().await {
+        // Source lookup happens at execution time to keep channel payload compact.
         let source = config
             .sources
             .iter()
@@ -72,6 +86,7 @@ fn mqtt_options(config: &AppConfig) -> MqttOptions {
     options.set_keep_alive(Duration::from_secs(config.mqtt.keep_alive_secs));
 
     if let Some(username) = &config.mqtt.username {
+        // Empty password is allowed when broker only requires username.
         options.set_credentials(username, config.mqtt.password.clone().unwrap_or_default());
     }
 
@@ -84,6 +99,7 @@ async fn subscribe_to_rpc_topics(client: &AsyncClient, config: &AppConfig) -> Re
             if !point.access.can_write() {
                 continue;
             }
+            // Writable points expose a corresponding `<state-topic>/set` subscription.
             let topic = set_topic(&config.mqtt.base_topic, &source.id, &point.topic);
             client.subscribe(topic.clone(), QoS::AtLeastOnce).await?;
             info!(
@@ -105,6 +121,7 @@ async fn drive_mqtt_event_loop(
     loop {
         match event_loop.poll().await {
             Ok(Event::Incoming(Incoming::Publish(publish))) => {
+                // Forward valid `/set` payloads to the write worker.
                 if let Some(command) = decode_rpc_publish(config, publish)? {
                     rpc_tx.send(command).await?;
                 }
@@ -114,6 +131,7 @@ async fn drive_mqtt_event_loop(
             }
             Ok(Event::Outgoing(_)) | Ok(Event::Incoming(_)) => {}
             Err(error) => {
+                // Small delay avoids a tight reconnect loop if broker is unavailable.
                 warn!(error = ?error, delay_secs = config.mqtt.reconnect_delay_secs, "mqtt loop error");
                 time::sleep(Duration::from_secs(config.mqtt.reconnect_delay_secs)).await;
             }
@@ -124,6 +142,7 @@ async fn drive_mqtt_event_loop(
 fn decode_rpc_publish(config: &AppConfig, publish: Publish) -> Result<Option<RpcCommand>> {
     let prefix = format!("{}/", config.mqtt.base_topic.trim_end_matches('/'));
     if !publish.topic.starts_with(&prefix) || !publish.topic.ends_with("/set") {
+        // Ignore unrelated topics from the same broker connection.
         return Ok(None);
     }
 
@@ -171,6 +190,7 @@ async fn poll_source_loop(client: Arc<AsyncClient>, base_topic: &str, source: So
 
         let elapsed = started.elapsed();
         if elapsed < interval {
+            // Keep a stable period by sleeping only the remaining time of the target interval.
             time::sleep(interval - elapsed).await;
         }
     }
@@ -186,6 +206,7 @@ async fn poll_source_once(
             continue;
         }
 
+        // Read current value from Modbus and publish the raw JSON value to MQTT.
         let value = read_point(source, point).await?;
         let topic = state_topic(base_topic, &source.id, &point.topic);
 
@@ -224,10 +245,12 @@ async fn handle_rpc_command(
         bail!("point '{}' is not writable", point.name);
     }
 
+    // Write requested value first...
     write_point(source, point, &command.payload).await?;
     info!(source = source.id, point = point.name, "write completed");
 
     if point.access.can_read() {
+        // ...then publish a fresh state sample so subscribers get immediate feedback.
         let value = read_point(source, point).await?;
         let topic = state_topic(base_topic, &source.id, &point.topic);
 
@@ -252,6 +275,7 @@ async fn read_point(source: &SourceConfig, point: &PointConfig) -> Result<Value>
     let result = time::timeout(timeout, async {
         let stream = TcpStream::connect(socket_addr).await?;
         let slave = Slave(source.unit_id);
+        // attach_slave binds the unit id to all subsequent requests on this context.
         let mut ctx = tcp::attach_slave(stream, slave);
 
         match point.kind {
@@ -308,6 +332,7 @@ async fn write_point(source: &SourceConfig, point: &PointConfig, payload: &Value
                 ctx.write_single_coil(point.address, value).await??;
             }
             EncodedWrite::Registers(registers) => {
+                // Use single-register write where possible; fall back to multi-register write otherwise.
                 if registers.len() == 1 {
                     ctx.write_single_register(point.address, registers[0])
                         .await??;

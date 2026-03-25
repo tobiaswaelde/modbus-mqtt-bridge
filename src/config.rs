@@ -3,7 +3,7 @@ use std::{fs, path::Path};
 use anyhow::{Context, Result, bail};
 use serde::Deserialize;
 
-// Top-level runtime configuration loaded from YAML or JSON.
+/// Top-level runtime configuration loaded from YAML or JSON.
 #[derive(Debug, Clone, Deserialize)]
 pub struct AppConfig {
     pub mqtt: MqttConfig,
@@ -13,10 +13,16 @@ pub struct AppConfig {
 }
 
 impl AppConfig {
+    /// Loads the configuration file from disk.
+    ///
+    /// Supported file extensions:
+    /// - `.yml` / `.yaml`
+    /// - `.json`
     pub fn load(path: &Path) -> Result<Self> {
         let raw = fs::read_to_string(path)
             .with_context(|| format!("failed to read config file {}", path.display()))?;
 
+        // The extension determines which parser to use so we can support both YAML and JSON.
         let ext = path
             .extension()
             .and_then(|value| value.to_str())
@@ -34,6 +40,7 @@ impl AppConfig {
         Ok(config)
     }
 
+    /// Validates cross-field constraints that cannot be expressed via serde alone.
     pub fn validate(&self) -> Result<()> {
         if self.sources.is_empty() {
             bail!("config must contain at least one source");
@@ -50,6 +57,7 @@ impl AppConfig {
     }
 }
 
+/// MQTT connection and topic settings.
 #[derive(Debug, Clone, Deserialize)]
 pub struct MqttConfig {
     pub host: String,
@@ -69,8 +77,10 @@ pub struct MqttConfig {
     pub reconnect_delay_secs: u64,
 }
 
+/// One Modbus TCP endpoint with its polling schedule and points.
 #[derive(Debug, Clone, Deserialize)]
 pub struct SourceConfig {
+    // Unique source identifier used in MQTT topic paths.
     pub id: String,
     pub host: String,
     #[serde(default = "default_modbus_port")]
@@ -84,10 +94,14 @@ pub struct SourceConfig {
     pub points: Vec<PointConfig>,
 }
 
+/// Mapping definition for one telemetry/control point.
 #[derive(Debug, Clone, Deserialize)]
 pub struct PointConfig {
+    // Human-readable display name (used for logs and diagnostics).
     pub name: String,
+    // Relative MQTT path segment under <base_topic>/<source_id>/...
     pub topic: String,
+    // Modbus start address for the point.
     pub address: u16,
     pub kind: RegisterKind,
     pub data_type: DataType,
@@ -105,7 +119,7 @@ pub struct PointConfig {
     pub retain: Option<bool>,
 }
 
-// Mirrors the Modbus function groups the bridge can poll.
+/// Supported Modbus function groups for read/write operations.
 #[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum RegisterKind {
@@ -115,6 +129,7 @@ pub enum RegisterKind {
     Input,
 }
 
+/// Logical data representation used for decode/encode.
 #[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum DataType {
@@ -128,6 +143,7 @@ pub enum DataType {
     RawU16,
 }
 
+/// Byte order inside a 16-bit Modbus register.
 #[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum ByteOrder {
@@ -136,6 +152,7 @@ pub enum ByteOrder {
     Little,
 }
 
+/// Word order across multiple 16-bit registers.
 #[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum WordOrder {
@@ -144,6 +161,7 @@ pub enum WordOrder {
     Little,
 }
 
+/// Combined byte/word ordering for multi-register values.
 #[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq)]
 pub struct Encoding {
     #[serde(default)]
@@ -154,6 +172,7 @@ pub struct Encoding {
 
 impl Default for Encoding {
     fn default() -> Self {
+        // Industry-default layout for most PLC/energy devices.
         Self {
             byte_order: ByteOrder::Big,
             word_order: WordOrder::Big,
@@ -161,6 +180,7 @@ impl Default for Encoding {
     }
 }
 
+/// Read/write access policy for a point.
 #[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum Access {
@@ -171,16 +191,18 @@ pub enum Access {
 }
 
 impl Access {
+    /// Returns `true` when this access mode permits reading.
     pub fn can_read(self) -> bool {
         matches!(self, Self::ReadOnly | Self::ReadWrite)
     }
 
+    /// Returns `true` when this access mode permits writing.
     pub fn can_write(self) -> bool {
         matches!(self, Self::WriteOnly | Self::ReadWrite)
     }
 }
 
-// Logging stays configurable so local development can use text while production can use JSON.
+/// Logging output configuration.
 #[derive(Debug, Clone, Deserialize, Default)]
 pub struct LoggingConfig {
     #[serde(default = "default_log_level")]

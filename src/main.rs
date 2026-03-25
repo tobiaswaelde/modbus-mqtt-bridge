@@ -20,8 +20,10 @@ const EXAMPLE_CONFIG: &str = include_str!("../config/config.yml");
 #[derive(Debug, Parser)]
 #[command(author, version, about = "Modbus TCP to MQTT bridge")]
 struct Cli {
+    // Runtime config path (YAML/JSON). Defaults to a repo-local path for simple local startup.
     #[arg(short, long, default_value = "config/config.yml")]
     config: PathBuf,
+    // Used by container HEALTHCHECK to validate config parsing and MQTT reachability.
     #[arg(long)]
     healthcheck: bool,
 }
@@ -46,6 +48,7 @@ fn ensure_config_exists(path: &Path) -> Result<()> {
         return Ok(());
     }
 
+    // Bootstraps first startup experience: create missing directories and write a safe template.
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)
             .with_context(|| format!("failed to create config directory {}", parent.display()))?;
@@ -84,6 +87,7 @@ async fn run_healthcheck(path: &Path) -> Result<()> {
 }
 
 fn init_logging(config: &AppConfig) -> Result<()> {
+    // Allow env override (RUST_LOG), otherwise fall back to config-defined level.
     let filter = EnvFilter::try_from_default_env()
         .or_else(|_| EnvFilter::try_new(config.logging.level.clone()))?;
 
