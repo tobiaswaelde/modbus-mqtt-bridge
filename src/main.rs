@@ -11,7 +11,7 @@ use tracing_subscriber::{EnvFilter, fmt};
 use modbus_mqtt_bridge::{bridge, config::AppConfig};
 
 // Bundled starter config written on first boot for easier local setup.
-const EXAMPLE_CONFIG: &str = include_str!("../config/config.yml");
+const EXAMPLE_CONFIG: &str = include_str!("../config/config.example.yml");
 
 #[derive(Debug, Parser)]
 #[command(author, version, about = "Modbus TCP to MQTT bridge")]

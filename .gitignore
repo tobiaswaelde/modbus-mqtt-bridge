@@ -13,6 +13,7 @@
 /config/*.local.yml
 /config/*.local.yaml
 /config/*.local.json
+/config/config.yml
 
 # Logs
 /*.log

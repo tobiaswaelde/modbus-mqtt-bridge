@@ -25,6 +25,7 @@ WORKDIR /app
 # Copy in the release binary and default config template.
 COPY --from=builder /app/target/x86_64-unknown-linux-musl/release/modbus-mqtt-bridge /modbus-mqtt-bridge
 COPY config /app/config
+COPY --from=builder /app/config/config.example.yml /app/config/config.yml
 
 # Run as an unprivileged numeric UID/GID (no passwd files needed in scratch).
 USER 65532:65532

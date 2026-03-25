@@ -1,0 +1,53 @@
+mqtt:
+  # MQTT broker the bridge publishes to and subscribes from.
+  host: localhost
+  port: 1883
+  client_id: modbus-mqtt-bridge
+  username:
+  password:
+  # Final topics look like: <base_topic>/<source_id>/<point_topic>
+  base_topic: modbus
+  keep_alive_secs: 30
+  reconnect_delay_secs: 5
+
+logging:
+  level: info
+  json: false
+
+sources:
+  # Each source represents one Modbus TCP endpoint.
+  - id: example-device
+    host: 127.0.0.1
+    port: 502
+    unit_id: 1
+    poll_interval_ms: 2000
+    request_timeout_ms: 3000
+    modbus_retries: 3
+    modbus_retry_backoff_ms: 250
+    points:
+      # Holding register example mapped to a float value.
+      - name: example_float
+        topic: telemetry/example_float
+        address: 0
+        kind: holding
+        data_type: f32
+        access: read_write
+        encoding:
+          byte_order: big
+          word_order: big
+        retain: true
+      # Coil example that can be read and written via the matching `/set` topic.
+      - name: example_coil
+        topic: status/example_coil
+        address: 1
+        kind: coil
+        data_type: bool
+        access: read_write
+      # Input register example with a fixed-width ASCII string.
+      - name: example_label
+        topic: info/example_label
+        address: 10
+        kind: input
+        data_type: string
+        count: 4
+        access: read_only
