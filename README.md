@@ -3,12 +3,17 @@
 [![Test](https://github.com/tobiaswaelde/modbus-mqtt-bridge/actions/workflows/test.yml/badge.svg)](https://github.com/tobiaswaelde/modbus-mqtt-bridge/actions/workflows/test.yml)
 [![Docker](https://github.com/tobiaswaelde/modbus-mqtt-bridge/actions/workflows/docker.yml/badge.svg)](https://github.com/tobiaswaelde/modbus-mqtt-bridge/actions/workflows/docker.yml)
 [![Version](https://img.shields.io/badge/version-0.1.0-blue.svg)](https://github.com/tobiaswaelde/modbus-mqtt-bridge/blob/master/Cargo.toml)
+[![Built with AI](https://img.shields.io/badge/built%20with-AI-0a7ea4.svg)](https://openai.com/)
 
 🔌 A lightweight Rust service that connects Modbus TCP devices to MQTT.
 
 It polls values from Modbus, publishes them to MQTT topics, and listens for MQTT `/set` commands to write values back to writable points.
 
 The checked-in config is intentionally a safe template with placeholder values, so the repository can stay public without exposing real broker credentials or device addresses.
+
+## 🌐 Documentation
+
+Full docs website: **https://tobiaswaelde.github.io/modbus-mqtt-bridge/**
 
 ## 📚 Table of Contents
 
