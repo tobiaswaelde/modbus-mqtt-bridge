@@ -11,41 +11,90 @@
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
-    <header class="hero">
-      <div class="container">
-        <p class="eyebrow">Documentation</p>
-        <h1>Modbus MQTT Bridge</h1>
-        <p class="lead">
-          Connect Modbus TCP devices to MQTT with a lightweight Rust bridge.
-        </p>
-        <nav class="quick-links">
-          <a href="#quick-start">Quick Start</a>
-          <a href="#configuration">Configuration</a>
-          <a href="#topics">Topics</a>
-          <a href="#docker">Docker</a>
+    <header class="topbar">
+      <div class="topbar-inner">
+        <a class="brand" href="#overview">Modbus MQTT Bridge</a>
+        <nav class="top-links">
+          <a href="https://github.com/tobiaswaelde/modbus-mqtt-bridge">GitHub</a>
+          <a href="../README.md">README</a>
+          <a href="../CHANGELOG.md">Changelog</a>
         </nav>
       </div>
     </header>
 
-    <main class="container">
-      <section id="quick-start">
-        <h2>Quick Start</h2>
-        <ol>
-          <li>Clone the repository and edit <code>config/config.yml</code>.</li>
-          <li>Start a local MQTT broker.</li>
-          <li>Run <code>cargo run -- --config config/config.yml</code>.</li>
-          <li>Subscribe to state topics and publish commands to <code>/set</code> topics.</li>
-        </ol>
-      </section>
+    <div class="layout">
+      <aside class="sidebar">
+        <p class="sidebar-title">Guide</p>
+        <a href="#overview">Overview</a>
+        <a href="#getting-started">Getting Started</a>
+        <a href="#concepts">Concepts</a>
+        <a href="#topic-contract">Topic Contract</a>
+        <a href="#configuration">Configuration</a>
+        <a href="#docker">Docker</a>
+        <a href="#operations">Operations</a>
+        <a href="#links">Links</a>
+      </aside>
 
-      <section id="configuration">
-        <h2>Configuration Overview</h2>
-        <p>
-          The bridge reads YAML or JSON config. Default path is
-          <code>config/config.yml</code>. If the file is missing, a template is generated
-          automatically.
-        </p>
-        <pre><code>mqtt:
+      <main class="content">
+        <section id="overview">
+          <p class="eyebrow">Documentation</p>
+          <h1>Modbus MQTT Bridge</h1>
+          <p class="lead">
+            A small Rust service that bridges Modbus TCP and MQTT with clear topic contracts,
+            strong typing, and production-friendly Docker support.
+          </p>
+          <div class="callout">
+            <strong>What this service does:</strong> Poll Modbus points, publish raw values to
+            MQTT state topics, and accept write commands via matching <code>/set</code> topics.
+          </div>
+        </section>
+
+        <section id="getting-started">
+          <h2>Getting Started</h2>
+          <ol>
+            <li>Clone the repository.</li>
+            <li>Edit <code>config/config.yml</code> with your broker and device settings.</li>
+            <li>Start an MQTT broker.</li>
+            <li>Run <code>cargo run -- --config config/config.yml</code>.</li>
+            <li>Publish test commands to <code>/set</code> topics.</li>
+          </ol>
+          <pre><code>cargo run -- --config config/config.yml</code></pre>
+        </section>
+
+        <section id="concepts">
+          <h2>Concepts</h2>
+          <p>The runtime has three core loops:</p>
+          <ul>
+            <li><strong>MQTT event loop</strong>: maintains broker connection and receives writes.</li>
+            <li><strong>Per-source polling loops</strong>: read configured Modbus points.</li>
+            <li><strong>Write handler</strong>: validates and applies incoming <code>/set</code> commands.</li>
+          </ul>
+          <p>
+            Each source is isolated in its own task so one slow device does not block all others.
+          </p>
+        </section>
+
+        <section id="topic-contract">
+          <h2>Topic Contract</h2>
+          <p>With <code>base_topic=modbus</code>, <code>source_id=example-device</code>, and <code>topic=telemetry/example_float</code>:</p>
+          <ul>
+            <li>State topic: <code>modbus/example-device/telemetry/example_float</code></li>
+            <li>Set topic: <code>modbus/example-device/telemetry/example_float/set</code></li>
+          </ul>
+          <p>State payload example:</p>
+          <pre><code>21.5</code></pre>
+          <p>Write payload examples:</p>
+          <pre><code>true
+{"value": 18.0}</code></pre>
+        </section>
+
+        <section id="configuration">
+          <h2>Configuration</h2>
+          <p>
+            Config can be YAML or JSON. Default path is <code>config/config.yml</code>. If the
+            file does not exist, the service writes a starter template automatically.
+          </p>
+          <pre><code>mqtt:
   host: localhost
   port: 1883
   client_id: modbus-mqtt-bridge
@@ -65,39 +114,44 @@ sources:
         kind: holding
         data_type: f32
         access: read_write</code></pre>
-      </section>
 
-      <section id="topics">
-        <h2>MQTT Topic Contract</h2>
-        <p>For <code>base_topic=modbus</code>, <code>source_id=example-device</code>, and <code>topic=telemetry/example_float</code>:</p>
-        <ul>
-          <li>State topic: <code>modbus/example-device/telemetry/example_float</code></li>
-          <li>Set topic: <code>modbus/example-device/telemetry/example_float/set</code></li>
-        </ul>
-        <p>State payloads are raw JSON values, for example:</p>
-        <pre><code>21.5</code></pre>
-        <p>Set payloads can be raw values or wrapped in an object:</p>
-        <pre><code>{"value": 18.0}</code></pre>
-      </section>
+          <h3>Supported enums</h3>
+          <ul>
+            <li><code>kind</code>: <code>coil</code>, <code>discrete_input</code>, <code>holding</code>, <code>input</code></li>
+            <li><code>data_type</code>: <code>bool</code>, <code>u16</code>, <code>i16</code>, <code>u32</code>, <code>i32</code>, <code>f32</code>, <code>string</code>, <code>raw_u16</code></li>
+            <li><code>access</code>: <code>read_only</code>, <code>write_only</code>, <code>read_write</code></li>
+            <li><code>encoding.byte_order</code> / <code>word_order</code>: <code>big</code> or <code>little</code></li>
+          </ul>
+        </section>
 
-      <section id="docker">
-        <h2>Docker Deployment</h2>
-        <p>Run the bridge with Docker Compose:</p>
-        <pre><code>docker compose up --build</code></pre>
-        <p>
-          The container includes a healthcheck and uses a small runtime image for
-          efficient deployment.
-        </p>
-      </section>
+        <section id="docker">
+          <h2>Docker</h2>
+          <p>Build and start with Compose:</p>
+          <pre><code>docker compose up --build</code></pre>
+          <p>
+            The image contains a built-in healthcheck and is optimized for size.
+          </p>
+        </section>
 
-      <section id="links">
-        <h2>Repository Links</h2>
-        <ul>
-          <li><a href="../README.md">README</a></li>
-          <li><a href="../config/config.yml">Example Config</a></li>
-          <li><a href="../AGENT.md">Agent Guide</a></li>
-        </ul>
-      </section>
-    </main>
+        <section id="operations">
+          <h2>Operations</h2>
+          <ul>
+            <li>Run healthcheck manually: <code>modbus-mqtt-bridge --healthcheck --config config/config.yml</code></li>
+            <li>Enable JSON logs with <code>logging.json: true</code>.</li>
+            <li>Override log level with <code>RUST_LOG</code> when needed.</li>
+          </ul>
+        </section>
+
+        <section id="links">
+          <h2>Links</h2>
+          <ul>
+            <li><a href="../README.md">README</a></li>
+            <li><a href="../CHANGELOG.md">CHANGELOG</a></li>
+            <li><a href="../config/config.yml">config/config.yml</a></li>
+            <li><a href="../AGENT.md">AGENT.md</a></li>
+          </ul>
+        </section>
+      </main>
+    </div>
   </body>
 </html>

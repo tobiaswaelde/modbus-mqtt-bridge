@@ -1,10 +1,13 @@
 :root {
-  --bg: #f6f8fb;
+  --bg: #f8fafc;
   --panel: #ffffff;
-  --text: #152133;
-  --muted: #516079;
-  --line: #dce3ee;
-  --accent: #006b5f;
+  --text: #1e293b;
+  --muted: #64748b;
+  --line: #e2e8f0;
+  --accent: #2b7fff;
+  --accent-soft: #eaf2ff;
+  --code-bg: #0f172a;
+  --code-fg: #dbeafe;
 }
 
 * {
@@ -14,25 +17,105 @@
 body {
   margin: 0;
   font-family:
-    "IBM Plex Sans",
+    "Atkinson Hyperlegible",
+    "Source Sans 3",
+    "Segoe UI Variable",
     "Segoe UI",
     Roboto,
     Helvetica,
     Arial,
     sans-serif;
   color: var(--text);
-  background: radial-gradient(circle at top right, #e7f4f1 0%, var(--bg) 40%);
+  background: var(--bg);
   line-height: 1.55;
 }
 
-.container {
-  width: min(960px, 92vw);
-  margin: 0 auto;
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  background: rgba(248, 250, 252, 0.88);
+  backdrop-filter: blur(6px);
+  border-bottom: 1px solid var(--line);
 }
 
-.hero {
-  padding: 3.5rem 0 2rem;
-  border-bottom: 1px solid var(--line);
+.topbar-inner {
+  width: min(1220px, 95vw);
+  margin: 0 auto;
+  min-height: 56px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.brand {
+  text-decoration: none;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.top-links {
+  display: flex;
+  gap: 1rem;
+}
+
+.top-links a {
+  color: var(--muted);
+  text-decoration: none;
+  font-size: 0.92rem;
+}
+
+.top-links a:hover {
+  color: var(--text);
+}
+
+.layout {
+  width: min(1220px, 95vw);
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: 240px minmax(0, 1fr);
+  gap: 2rem;
+  padding: 1.4rem 0 3rem;
+}
+
+.sidebar {
+  position: sticky;
+  top: 72px;
+  height: fit-content;
+  border-right: 1px solid var(--line);
+  padding-right: 1rem;
+}
+
+.sidebar-title {
+  margin: 0 0 0.8rem;
+  color: var(--muted);
+  font-size: 0.78rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.sidebar a {
+  display: block;
+  text-decoration: none;
+  color: var(--muted);
+  padding: 0.28rem 0.45rem;
+  border-radius: 8px;
+  font-size: 0.94rem;
+  margin-bottom: 0.2rem;
+}
+
+.sidebar a:hover {
+  color: var(--text);
+  background: #f1f5f9;
+}
+
+.content {
+  min-width: 0;
+}
+
+section {
+  margin-bottom: 2.3rem;
 }
 
 .eyebrow {
@@ -44,63 +127,88 @@ body {
 }
 
 h1 {
-  margin: 0.3rem 0 0.6rem;
-  font-size: clamp(2rem, 4vw, 3rem);
-  line-height: 1.12;
+  margin: 0.25rem 0 0.6rem;
+  font-size: clamp(2rem, 4vw, 2.8rem);
+  line-height: 1.14;
 }
 
 .lead {
   margin: 0;
   color: var(--muted);
-  font-size: 1.05rem;
-}
-
-.quick-links {
-  margin-top: 1.2rem;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.6rem;
-}
-
-.quick-links a {
-  text-decoration: none;
-  color: var(--accent);
-  border: 1px solid color-mix(in srgb, var(--accent) 35%, white);
-  background: color-mix(in srgb, var(--accent) 10%, white);
-  border-radius: 999px;
-  padding: 0.35rem 0.75rem;
-  font-size: 0.9rem;
-}
-
-main {
-  padding: 2rem 0 3rem;
-}
-
-section {
-  background: var(--panel);
-  border: 1px solid var(--line);
-  border-radius: 14px;
-  padding: 1.2rem 1.2rem;
-  margin-bottom: 1rem;
+  font-size: 1.06rem;
+  max-width: 68ch;
 }
 
 h2 {
-  margin-top: 0;
+  margin: 0 0 0.5rem;
+  font-size: 1.5rem;
+}
+
+h3 {
+  margin-top: 1rem;
+  margin-bottom: 0.45rem;
+  font-size: 1.1rem;
+}
+
+p {
+  max-width: 80ch;
+}
+
+.callout {
+  border: 1px solid #bfdbfe;
+  background: var(--accent-soft);
+  border-radius: 12px;
+  padding: 0.85rem 0.95rem;
+  margin-top: 1rem;
+  max-width: 82ch;
 }
 
 code,
 pre {
-  font-family: "JetBrains Mono", "Fira Code", ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-family: "JetBrains Mono", "Fira Code", ui-monospace, SFMono-Regular, Menlo,
+    monospace;
 }
 
 pre {
-  background: #0d1b2a;
-  color: #dce7f8;
+  background: var(--code-bg);
+  color: var(--code-fg);
   border-radius: 10px;
   padding: 0.9rem;
   overflow-x: auto;
+  border: 1px solid #1e293b;
+}
+
+code {
+  background: #f1f5f9;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  padding: 0.07rem 0.33rem;
+  color: #0f172a;
+}
+
+pre code {
+  background: transparent;
+  border: none;
+  padding: 0;
+  color: inherit;
 }
 
 a {
   color: var(--accent);
+}
+
+@media (max-width: 900px) {
+  .layout {
+    grid-template-columns: 1fr;
+    gap: 1rem;
+  }
+
+  .sidebar {
+    position: static;
+    border-right: none;
+    border-bottom: 1px solid var(--line);
+    padding-right: 0;
+    padding-bottom: 0.8rem;
+    margin-bottom: 0.2rem;
+  }
 }
