@@ -2,6 +2,10 @@
 /.idea
 /.vscode
 /.DS_Store
+/node_modules
+/docs/node_modules
+/docs/.vitepress/dist
+/docs/.vitepress/cache
 
 # Local runtime config and secrets
 /.env

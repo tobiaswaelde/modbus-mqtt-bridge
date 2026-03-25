@@ -209,8 +209,15 @@ The compose file mounts the local `config/` directory into the container, so you
 
 ## 🌐 Documentation Website
 
-- Source files are in `docs/`.
-- GitHub Pages deployment is handled by `.github/workflows/pages.yml`.
+- Source files are Markdown files in `docs/` and built with **VitePress**.
+- Local docs preview:
+  - `cd docs`
+  - `npm install`
+  - `npm run dev`
+- Production docs build:
+  - `cd docs`
+  - `npm run build`
+- GitHub Pages deployment is handled by `.github/workflows/pages.yml` and uploads `docs/.vitepress/dist`.
 - After enabling Pages in repository settings, the site is automatically deployed on push to `master`/`main`.
 
 ## 🔁 GitHub Actions
