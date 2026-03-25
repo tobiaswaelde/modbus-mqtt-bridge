@@ -2,11 +2,23 @@
 
 This project supports multiple deployment paths depending on your environment.
 
-## Docker Compose (recommended)
+## Container Deployment
 
-```bash
+::: code-group
+
+```bash [docker compose (recommended)]
 docker compose up --build -d
 ```
+
+```bash [docker run]
+docker run --rm \
+  --name modbus-mqtt-bridge \
+  -v "$(pwd)/config:/app/config:ro" \
+  ghcr.io/tobiaswaelde/modbus-mqtt-bridge:latest \
+  --config /app/config/config.yml
+```
+
+:::
 
 Why this is usually the best default:
 
@@ -25,10 +37,6 @@ Example pull/run:
 
 ```bash
 docker pull ghcr.io/tobiaswaelde/modbus-mqtt-bridge:latest
-docker run --rm \
-  -v "$(pwd)/config:/app/config:ro" \
-  ghcr.io/tobiaswaelde/modbus-mqtt-bridge:latest \
-  --config /app/config/config.yml
 ```
 
 ## Bare-metal / VM
