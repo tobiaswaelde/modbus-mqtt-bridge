@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Modbus MQTT Bridge Docs</title>
+    <meta
+      name="description"
+      content="Documentation for the Modbus MQTT Bridge: setup, configuration, topics, and deployment."
+    />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <header class="hero">
+      <div class="container">
+        <p class="eyebrow">Documentation</p>
+        <h1>Modbus MQTT Bridge</h1>
+        <p class="lead">
+          Connect Modbus TCP devices to MQTT with a lightweight Rust bridge.
+        </p>
+        <nav class="quick-links">
+          <a href="#quick-start">Quick Start</a>
+          <a href="#configuration">Configuration</a>
+          <a href="#topics">Topics</a>
+          <a href="#docker">Docker</a>
+        </nav>
+      </div>
+    </header>
+
+    <main class="container">
+      <section id="quick-start">
+        <h2>Quick Start</h2>
+        <ol>
+          <li>Clone the repository and edit <code>config/config.yml</code>.</li>
+          <li>Start a local MQTT broker.</li>
+          <li>Run <code>cargo run -- --config config/config.yml</code>.</li>
+          <li>Subscribe to state topics and publish commands to <code>/set</code> topics.</li>
+        </ol>
+      </section>
+
+      <section id="configuration">
+        <h2>Configuration Overview</h2>
+        <p>
+          The bridge reads YAML or JSON config. Default path is
+          <code>config/config.yml</code>. If the file is missing, a template is generated
+          automatically.
+        </p>
+        <pre><code>mqtt:
+  host: localhost
+  port: 1883
+  client_id: modbus-mqtt-bridge
+  base_topic: modbus
+
+sources:
+  - id: example-device
+    host: 127.0.0.1
+    port: 502
+    unit_id: 1
+    poll_interval_ms: 2000
+    request_timeout_ms: 3000
+    points:
+      - name: example_float
+        topic: telemetry/example_float
+        address: 0
+        kind: holding
+        data_type: f32
+        access: read_write</code></pre>
+      </section>
+
+      <section id="topics">
+        <h2>MQTT Topic Contract</h2>
+        <p>For <code>base_topic=modbus</code>, <code>source_id=example-device</code>, and <code>topic=telemetry/example_float</code>:</p>
+        <ul>
+          <li>State topic: <code>modbus/example-device/telemetry/example_float</code></li>
+          <li>Set topic: <code>modbus/example-device/telemetry/example_float/set</code></li>
+        </ul>
+        <p>State payloads are raw JSON values, for example:</p>
+        <pre><code>21.5</code></pre>
+        <p>Set payloads can be raw values or wrapped in an object:</p>
+        <pre><code>{"value": 18.0}</code></pre>
+      </section>
+
+      <section id="docker">
+        <h2>Docker Deployment</h2>
+        <p>Run the bridge with Docker Compose:</p>
+        <pre><code>docker compose up --build</code></pre>
+        <p>
+          The container includes a healthcheck and uses a small runtime image for
+          efficient deployment.
+        </p>
+      </section>
+
+      <section id="links">
+        <h2>Repository Links</h2>
+        <ul>
+          <li><a href="../README.md">README</a></li>
+          <li><a href="../config/config.yml">Example Config</a></li>
+          <li><a href="../AGENT.md">Agent Guide</a></li>
+        </ul>
+      </section>
+    </main>
+  </body>
+</html>

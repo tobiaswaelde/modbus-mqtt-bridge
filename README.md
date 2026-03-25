@@ -19,6 +19,7 @@ The checked-in config is intentionally a safe template with placeholder values, 
 - [📝 Example Config](#-example-config)
 - [🚀 Run Locally](#-run-locally)
 - [🐳 Run With Docker](#-run-with-docker)
+- [🌐 Documentation Website](#-documentation-website)
 - [🔁 GitHub Actions](#-github-actions)
 
 ## ✨ Features
@@ -187,7 +188,14 @@ docker compose up --build
 
 The compose file mounts the local `config/` directory into the container, so you can edit the config without rebuilding the image.
 
+## 🌐 Documentation Website
+
+- Source files are in `docs/`.
+- GitHub Pages deployment is handled by `.github/workflows/pages.yml`.
+- After enabling Pages in repository settings, the site is automatically deployed on push to `master`/`main`.
+
 ## 🔁 GitHub Actions
 
 - `.github/workflows/test.yml` runs formatting, clippy, tests, and a release build on pushes and pull requests
 - `.github/workflows/docker.yml` publishes a Docker image to GHCR using the repository name automatically, for example `ghcr.io/<owner>/<repo>`
+- `.github/workflows/pages.yml` publishes the docs website to GitHub Pages
