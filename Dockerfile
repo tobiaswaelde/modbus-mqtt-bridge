@@ -1,29 +1,38 @@
-# Build stage: compile the Rust binary with all source/config assets available.
-FROM rust:1.87-bookworm AS builder
+# Build stage: compile a fully static binary to enable a tiny runtime image.
+FROM rust:1.87-alpine AS builder
 WORKDIR /app
 
-# Copy manifest files first to maximize layer cache reuse for dependencies.
+# Install minimal native tooling needed for musl static builds.
+RUN apk add --no-cache musl-dev
+
+# Build for musl so the runtime can be `scratch` (no libc required at runtime).
+RUN rustup target add x86_64-unknown-linux-musl
+
+# Copy manifest files first to maximize layer cache reuse.
 COPY Cargo.toml Cargo.toml
 COPY Cargo.lock Cargo.lock
 
 # Copy application sources and bundled default config used by include_str! at compile time.
 COPY src src
 COPY config config
-RUN cargo build --release
+RUN cargo build --release --target x86_64-unknown-linux-musl \
+  && strip /app/target/x86_64-unknown-linux-musl/release/modbus-mqtt-bridge
 
-# Runtime stage: small base image that only contains the compiled binary and config directory.
-FROM debian:bookworm-slim
-RUN useradd --system --create-home --home-dir /app appuser
+# Runtime stage: `scratch` is the smallest possible base image.
+FROM scratch
 WORKDIR /app
 
 # Copy in the release binary and default config template.
-COPY --from=builder /app/target/release/modbus-mqtt-bridge /usr/local/bin/modbus-mqtt-bridge
+COPY --from=builder /app/target/x86_64-unknown-linux-musl/release/modbus-mqtt-bridge /modbus-mqtt-bridge
 COPY config /app/config
 
-USER appuser
+# Run as an unprivileged numeric UID/GID (no passwd files needed in scratch).
+USER 65532:65532
+
 # Healthcheck calls the built-in CLI check, which validates config and MQTT broker reachability.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-  CMD ["/usr/local/bin/modbus-mqtt-bridge", "--healthcheck", "--config", "/app/config/config.yml"]
-ENTRYPOINT ["modbus-mqtt-bridge"]
+  CMD ["/modbus-mqtt-bridge", "--healthcheck", "--config", "/app/config/config.yml"]
+
+ENTRYPOINT ["/modbus-mqtt-bridge"]
 # Default config path can be overridden by passing a different --config value.
 CMD ["--config", "/app/config/config.yml"]
