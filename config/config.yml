@@ -14,10 +14,6 @@ logging:
   level: info
   json: false
 
-metrics:
-  enabled: false
-  bind: 0.0.0.0:9464
-
 sources:
   # Each source represents one Modbus TCP endpoint.
   - id: example-device

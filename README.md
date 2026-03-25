@@ -2,7 +2,7 @@
 
 [![Test](https://github.com/tobiaswaelde/modbus-mqtt-bridge/actions/workflows/test.yml/badge.svg)](https://github.com/tobiaswaelde/modbus-mqtt-bridge/actions/workflows/test.yml)
 [![Docker](https://github.com/tobiaswaelde/modbus-mqtt-bridge/actions/workflows/docker.yml/badge.svg)](https://github.com/tobiaswaelde/modbus-mqtt-bridge/actions/workflows/docker.yml)
-[![Version](https://img.shields.io/badge/version-0.2.0-blue.svg)](https://github.com/tobiaswaelde/modbus-mqtt-bridge/blob/master/Cargo.toml)
+[![Version](https://img.shields.io/badge/version-1.0.0-blue.svg)](https://github.com/tobiaswaelde/modbus-mqtt-bridge/blob/master/Cargo.toml)
 [![Built with AI](https://img.shields.io/badge/built%20with-AI-0a7ea4.svg)](https://openai.com/)
 
 Rust bridge between Modbus TCP and MQTT.  
@@ -26,7 +26,6 @@ Project history: [CHANGELOG.md](/mnt/projects/tmp/modbus-test/CHANGELOG.md)
 - Multi-source Modbus TCP polling
 - MQTT state + `/set` write contract
 - Robust reconnect/retry behavior
-- Optional metrics endpoint
 - Docker-ready runtime and healthcheck
 - GitHub Actions for test, image publish, release, and pages
 

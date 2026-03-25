@@ -10,8 +10,6 @@ pub struct AppConfig {
     pub sources: Vec<SourceConfig>,
     #[serde(default)]
     pub logging: LoggingConfig,
-    #[serde(default)]
-    pub metrics: MetricsConfig,
 }
 
 impl AppConfig {
@@ -217,24 +215,6 @@ pub struct LoggingConfig {
     pub json: bool,
 }
 
-/// Optional metrics endpoint configuration.
-#[derive(Debug, Clone, Deserialize)]
-pub struct MetricsConfig {
-    #[serde(default)]
-    pub enabled: bool,
-    #[serde(default = "default_metrics_bind")]
-    pub bind: String,
-}
-
-impl Default for MetricsConfig {
-    fn default() -> Self {
-        Self {
-            enabled: false,
-            bind: default_metrics_bind(),
-        }
-    }
-}
-
 fn default_mqtt_port() -> u16 {
     1883
 }
@@ -277,8 +257,4 @@ fn default_modbus_retry_backoff_ms() -> u64 {
 
 fn default_log_level() -> String {
     "info".to_string()
-}
-
-fn default_metrics_bind() -> String {
-    "0.0.0.0:9464".to_string()
 }

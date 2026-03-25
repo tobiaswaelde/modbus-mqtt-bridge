@@ -1,22 +1,9 @@
-use std::{
-    future::Future,
-    net::SocketAddr,
-    sync::{
-        Arc,
-        atomic::{AtomicU64, Ordering},
-    },
-    time::Duration,
-};
+use std::{future::Future, net::SocketAddr, sync::Arc, time::Duration};
 
 use anyhow::{Context, Result, anyhow, bail};
 use rumqttc::{AsyncClient, Event, EventLoop, Incoming, MqttOptions, Publish, QoS};
 use serde_json::Value;
-use tokio::{
-    io::AsyncWriteExt,
-    net::{TcpListener, TcpStream},
-    sync::mpsc,
-    time,
-};
+use tokio::{net::TcpStream, sync::mpsc, time};
 use tokio_modbus::{client::tcp, prelude::*};
 use tracing::{debug, error, info, warn};
 
@@ -47,33 +34,15 @@ pub async fn run(config: AppConfig) -> Result<()> {
     let mqtt_options = mqtt_options(&config);
     let (mqtt_client, mut event_loop) = AsyncClient::new(mqtt_options, 100);
     let mqtt_client = Arc::new(mqtt_client);
-    let metrics = Arc::new(BridgeMetrics::default());
-
-    if config.metrics.enabled {
-        let bind = config.metrics.bind.clone();
-        let metrics_clone = Arc::clone(&metrics);
-        tokio::spawn(async move {
-            if let Err(error) = serve_metrics(bind, metrics_clone).await {
-                error!(error = ?error, "metrics server stopped");
-            }
-        });
-    }
 
     // MQTT message handling is decoupled via channel: event loop receives, worker handles writes.
     let (rpc_tx, mut rpc_rx) = mpsc::channel::<RpcCommand>(100);
     let event_config = config.clone();
     let event_client = Arc::clone(&mqtt_client);
-    let event_metrics = Arc::clone(&metrics);
     tokio::spawn(async move {
         // This task must run continuously; rumqttc drives reconnect behavior via poll().
-        if let Err(error) = drive_mqtt_event_loop(
-            event_client,
-            &mut event_loop,
-            rpc_tx,
-            &event_config,
-            event_metrics,
-        )
-        .await
+        if let Err(error) =
+            drive_mqtt_event_loop(event_client, &mut event_loop, rpc_tx, &event_config).await
         {
             error!(error = ?error, "mqtt event loop stopped");
         }
@@ -83,9 +52,8 @@ pub async fn run(config: AppConfig) -> Result<()> {
     for source in config.sources.iter().cloned() {
         let client = Arc::clone(&mqtt_client);
         let base_topic = config.mqtt.base_topic.clone();
-        let metrics = Arc::clone(&metrics);
         tokio::spawn(async move {
-            poll_source_loop(client, &base_topic, source, metrics).await;
+            poll_source_loop(client, &base_topic, source).await;
         });
     }
 
@@ -98,16 +66,9 @@ pub async fn run(config: AppConfig) -> Result<()> {
             .cloned()
             .ok_or_else(|| anyhow!("received rpc for unknown source '{}'", command.source_id))?;
 
-        if let Err(error) = handle_rpc_command(
-            &mqtt_client,
-            &config.mqtt.base_topic,
-            &source,
-            command,
-            &metrics,
-        )
-        .await
+        if let Err(error) =
+            handle_rpc_command(&mqtt_client, &config.mqtt.base_topic, &source, command).await
         {
-            metrics.rpc_write_failures.fetch_add(1, Ordering::Relaxed);
             error!(source = source.id, error = ?error, "rpc command failed");
         }
     }
@@ -164,7 +125,6 @@ async fn drive_mqtt_event_loop(
     event_loop: &mut EventLoop,
     rpc_tx: mpsc::Sender<RpcCommand>,
     config: &AppConfig,
-    metrics: Arc<BridgeMetrics>,
 ) -> Result<()> {
     loop {
         match event_loop.poll().await {
@@ -175,7 +135,6 @@ async fn drive_mqtt_event_loop(
                 }
             }
             Ok(Event::Incoming(Incoming::ConnAck(_))) => {
-                metrics.mqtt_reconnects.fetch_add(1, Ordering::Relaxed);
                 info!("connected to mqtt broker");
                 if let Err(error) = subscribe_to_rpc_topics(&client, config).await {
                     warn!(error = ?error, "failed to resubscribe rpc topics after mqtt connect");
@@ -233,16 +192,11 @@ fn parse_rpc_payload(bytes: &[u8]) -> Result<Value> {
     }
 }
 
-async fn poll_source_loop(
-    client: Arc<AsyncClient>,
-    base_topic: &str,
-    source: SourceConfig,
-    metrics: Arc<BridgeMetrics>,
-) {
+async fn poll_source_loop(client: Arc<AsyncClient>, base_topic: &str, source: SourceConfig) {
     let interval = Duration::from_millis(source.poll_interval_ms);
     loop {
         let started = time::Instant::now();
-        if let Err(error) = poll_source_once(&client, base_topic, &source, &metrics).await {
+        if let Err(error) = poll_source_once(&client, base_topic, &source).await {
             warn!(source = source.id, error = ?error, "poll cycle failed");
         }
 
@@ -258,7 +212,6 @@ async fn poll_source_once(
     client: &AsyncClient,
     base_topic: &str,
     source: &SourceConfig,
-    metrics: &BridgeMetrics,
 ) -> Result<()> {
     for point in &source.points {
         if !point.access.can_read() {
@@ -266,15 +219,12 @@ async fn poll_source_once(
         }
 
         if let Err(error) = poll_point(client, base_topic, source, point).await {
-            metrics.poll_failures.fetch_add(1, Ordering::Relaxed);
             warn!(
                 source = source.id,
                 point = point.name,
                 error = ?error,
                 "point poll failed"
             );
-        } else {
-            metrics.poll_successes.fetch_add(1, Ordering::Relaxed);
         }
     }
 
@@ -319,7 +269,6 @@ async fn handle_rpc_command(
     base_topic: &str,
     source: &SourceConfig,
     command: RpcCommand,
-    metrics: &BridgeMetrics,
 ) -> Result<()> {
     let point = source
         .points
@@ -333,7 +282,6 @@ async fn handle_rpc_command(
 
     // Write requested value first...
     write_point(source, point, &command.payload).await?;
-    metrics.rpc_write_successes.fetch_add(1, Ordering::Relaxed);
     info!(source = source.id, point = point.name, "write completed");
 
     if point.access.can_read() {
@@ -538,55 +486,5 @@ fn set_topic(base_topic: &str, source_id: &str, point_topic: &str) -> String {
         base_topic.trim_end_matches('/'),
         source_id,
         point_topic.trim_start_matches('/')
-    )
-}
-
-#[derive(Default)]
-struct BridgeMetrics {
-    poll_successes: AtomicU64,
-    poll_failures: AtomicU64,
-    rpc_write_successes: AtomicU64,
-    rpc_write_failures: AtomicU64,
-    mqtt_reconnects: AtomicU64,
-}
-
-async fn serve_metrics(bind: String, metrics: Arc<BridgeMetrics>) -> Result<()> {
-    let listener = TcpListener::bind(&bind)
-        .await
-        .with_context(|| format!("failed to bind metrics endpoint on {}", bind))?;
-    info!(bind, "metrics endpoint listening");
-
-    loop {
-        let (mut stream, _) = listener.accept().await?;
-        let body = render_metrics(&metrics);
-        let response = format!(
-            "HTTP/1.1 200 OK\r\ncontent-type: text/plain; version=0.0.4; charset=utf-8\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{}",
-            body.len(),
-            body
-        );
-        stream.write_all(response.as_bytes()).await?;
-        let _ = stream.shutdown().await;
-    }
-}
-
-fn render_metrics(metrics: &BridgeMetrics) -> String {
-    format!(
-        concat!(
-            "# TYPE modbus_mqtt_poll_success_total counter\n",
-            "modbus_mqtt_poll_success_total {}\n",
-            "# TYPE modbus_mqtt_poll_failure_total counter\n",
-            "modbus_mqtt_poll_failure_total {}\n",
-            "# TYPE modbus_mqtt_rpc_write_success_total counter\n",
-            "modbus_mqtt_rpc_write_success_total {}\n",
-            "# TYPE modbus_mqtt_rpc_write_failure_total counter\n",
-            "modbus_mqtt_rpc_write_failure_total {}\n",
-            "# TYPE modbus_mqtt_mqtt_reconnect_total counter\n",
-            "modbus_mqtt_mqtt_reconnect_total {}\n"
-        ),
-        metrics.poll_successes.load(Ordering::Relaxed),
-        metrics.poll_failures.load(Ordering::Relaxed),
-        metrics.rpc_write_successes.load(Ordering::Relaxed),
-        metrics.rpc_write_failures.load(Ordering::Relaxed),
-        metrics.mqtt_reconnects.load(Ordering::Relaxed),
     )
 }

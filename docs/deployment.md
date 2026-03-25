@@ -60,13 +60,3 @@ Run directly as a binary when containers are not desired:
 cargo build --release
 ./target/release/modbus-mqtt-bridge --config config/config.yml
 ```
-
-## GitHub Pages Docs
-
-Documentation is deployed separately from the bridge runtime:
-
-- workflow: `.github/workflows/pages.yml`
-- source: `docs/` (VitePress)
-- publish output: `docs/.vitepress/dist`
-
-Your runtime deployment and docs deployment are independent, so docs updates do not restart your bridge service.

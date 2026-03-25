@@ -15,10 +15,6 @@ logging:
   level: info
   json: false
 
-metrics:
-  enabled: false
-  bind: 0.0.0.0:9464
-
 sources:
   - id: example-device
     host: 127.0.0.1

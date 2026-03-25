@@ -87,5 +87,3 @@ For larger changes, prefer multiple logical commits with meaningful messages.
 - Add integration tests with a mock Modbus server and test MQTT broker.
 - Add optional MQTT TLS settings in config.
 - Add optional publish QoS setting per point or globally.
-- Add metrics endpoint (for example Prometheus) for poll success/failure counts and latencies.
-

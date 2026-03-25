@@ -13,11 +13,30 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Fixed
 
+## [1.0.0] - 2026-03-25
+
+### Added
+
+- VitePress-based documentation site with Markdown pages and Mermaid architecture diagrams.
+- Dedicated deployment docs including `docker compose` and `docker run` examples.
+- Docs lockfile (`docs/package-lock.json`) for reproducible dependency installs.
+- Docs build job in CI (`test.yml`) to validate documentation on push and pull requests.
+
+### Changed
+
+- Simplified runtime by removing optional metrics endpoint code and configuration.
+- Updated GitHub Pages workflow to build VitePress output from `docs/`.
+- Updated release workflow to build and package a musl binary (`x86_64-unknown-linux-musl`).
+- Streamlined README to keep it concise and link to docs for detailed guidance.
+
+### Fixed
+
+- Improved CI determinism by switching docs install steps to `npm ci` with lockfile-aware cache paths.
+
 ## [0.2.0] - 2026-03-25
 
 ### Added
 
-- Optional metrics endpoint (`metrics.enabled`, `metrics.bind`) with Prometheus-style counters.
 - Integration test suite in `tests/integration_config_codec.rs`.
 - Release workflow (`.github/workflows/release.yml`) for tagged GitHub releases with packaged artifacts.
 - Expanded docs website sections: architecture diagram, practical recipes, troubleshooting.

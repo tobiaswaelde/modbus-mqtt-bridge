@@ -6,10 +6,6 @@
 modbus-mqtt-bridge --healthcheck --config config/config.yml
 ```
 
-- Enable metrics endpoint:
-  - `metrics.enabled: true`
-  - default bind: `0.0.0.0:9464`
-
 - Enable JSON logs:
   - `logging.json: true`
 
