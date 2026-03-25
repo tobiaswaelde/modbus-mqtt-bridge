@@ -1,5 +1,7 @@
+import { withMermaid } from "vitepress-plugin-mermaid";
+
 /** @type {import('vitepress').UserConfig} */
-export default {
+const config = {
   title: "Modbus MQTT Bridge",
   description: "Documentation for setup, configuration, operations, and integrations",
   base: "/modbus-mqtt-bridge/",
@@ -41,3 +43,5 @@ export default {
     }
   }
 };
+
+export default withMermaid(config);

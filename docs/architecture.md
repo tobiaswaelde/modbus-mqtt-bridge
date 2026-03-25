@@ -2,7 +2,32 @@
 
 The bridge sits between Modbus TCP devices and MQTT consumers.
 
-![Architecture Diagram](/architecture.svg)
+```mermaid
+flowchart LR
+  subgraph Field["Field Layer"]
+    DEV["Modbus Device\n(PLC / Inverter / Meter)"]
+  end
+
+  subgraph Bridge["Bridge Runtime"]
+    BRIDGE["Modbus MQTT Bridge\n- Polls configured points\n- Publishes state topics\n- Handles /set writes"]
+  end
+
+  subgraph Messaging["Messaging Layer"]
+    BROKER["MQTT Broker\n(Mosquitto / EMQX / HiveMQ)"]
+  end
+
+  subgraph Consumers["Consumer Layer"]
+    HA["Home Assistant"]
+    NR["Node-RED"]
+    CLI["CLI / Scripts"]
+  end
+
+  DEV <--> |Modbus TCP| BRIDGE
+  BRIDGE <--> |MQTT| BROKER
+  BROKER --> HA
+  BROKER --> NR
+  BROKER --> CLI
+```
 
 ## Data flow
 

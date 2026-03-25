@@ -20,6 +20,19 @@ docker run --rm \
 
 :::
 
+Example `docker-compose.yml`:
+
+```yaml
+services:
+  modbus-mqtt-bridge:
+    image: ghcr.io/tobiaswaelde/modbus-mqtt-bridge:latest
+    container_name: modbus-mqtt-bridge
+    restart: unless-stopped
+    volumes:
+      - ./config:/app/config:ro
+    command: ["--config", "/app/config/config.yml"]
+```
+
 Why this is usually the best default:
 
 - simple, reproducible setup
