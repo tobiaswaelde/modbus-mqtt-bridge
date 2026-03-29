@@ -1,3 +1,5 @@
+name: modbus-mqtt-bridge
+
 services:
   modbus-mqtt-bridge:
     build:
