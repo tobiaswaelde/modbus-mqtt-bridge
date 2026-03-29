@@ -16,6 +16,19 @@
   [Deployment](https://tobiaswaelde.github.io/modbus-mqtt-bridge/deployment)
 </div>
 
+## Table of Contents 📚
+
+- [Why this project](#why-this-project)
+- [Features](#features)
+- [Quick start](#quick-start)
+- [Topic contract](#topic-contract)
+- [Minimal configuration](#minimal-configuration)
+- [Run locally (without Docker)](#run-locally-without-docker)
+- [Documentation](#documentation)
+- [Project files](#project-files)
+- [Changelog](#changelog)
+- [License](#license)
+
 ## Why this project
 
 `modbus-mqtt-bridge` continuously polls Modbus points and publishes raw JSON values to MQTT state topics. It also accepts writes through matching `/set` topics and forwards those writes back to Modbus.
@@ -24,16 +37,16 @@ Use it when you want one stable integration layer between PLCs/inverters/meters 
 
 ## Features
 
-- Multi-source Modbus TCP polling (independent poll loops per source)
-- Predictable MQTT topic contract (`state` + `/set`)
-- Typed decode/encode (`bool`, `u16`, `i16`, `u32`, `i32`, `f32`, `string`, `raw_u16`)
-- Retry/backoff knobs for Modbus reads/writes
-- Built-in healthcheck mode for container orchestration
-- Docker-ready (small `scratch` runtime image)
+- 🔄 Multi-source Modbus TCP polling (independent poll loops per source)
+- 📡 Predictable MQTT topic contract (`state` + `/set`)
+- 🧠 Typed decode/encode (`bool`, `u16`, `i16`, `u32`, `i32`, `f32`, `string`, `raw_u16`)
+- 🛡️ Retry/backoff knobs for Modbus reads/writes
+- ❤️ Built-in healthcheck mode for container orchestration
+- 🐳 Docker-ready (small `scratch` runtime image)
 
 ## Quick start
 
-### 1. Run with Docker Compose (recommended)
+### 1. 🚀 Run with Docker Compose (recommended)
 
 ```bash
 git clone https://github.com/tobiaswaelde/modbus-mqtt-bridge.git
@@ -44,13 +57,13 @@ cp config/config.example.yml config/config.yml
 docker compose up --build -d
 ```
 
-### 2. Verify data flow
+### 2. 🔍 Verify data flow
 
 ```bash
 mosquitto_sub -h <mqtt-host> -t 'modbus/#' -v
 ```
 
-Optional write test:
+Optional write test ✍️:
 
 ```bash
 mosquitto_pub -h <mqtt-host> -t 'modbus/example-device/status/example_coil/set' -m true
@@ -108,7 +121,7 @@ cargo run -- --config config/config.yml
 
 ## Documentation
 
-Docs are built with VitePress from `docs/`.
+Docs are built with VitePress from `docs/` 📝.
 
 ```bash
 cd docs
