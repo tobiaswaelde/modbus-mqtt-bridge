@@ -1,7 +1,7 @@
+import { defineConfig } from "vitepress";
 import { withMermaid } from "vitepress-plugin-mermaid";
 
-/** @type {import('vitepress').UserConfig} */
-const config = {
+const config = defineConfig({
   title: "Modbus MQTT Bridge",
   description: "Documentation for setup, configuration, operations, and integrations",
   base: "/modbus-mqtt-bridge/",
@@ -12,7 +12,8 @@ const config = {
     nav: [
       { text: "Guide", link: "/" },
       { text: "Configuration", link: "/configuration" },
-      { text: "Deployment", link: "/deployment" }
+      { text: "Deployment", link: "/deployment" },
+      { text: "Troubleshooting", link: "/troubleshooting" }
     ],
     search: {
       provider: "local"
@@ -42,6 +43,6 @@ const config = {
       copyright: "Copyright 2026 Modbus MQTT Bridge"
     }
   }
-};
+});
 
 export default withMermaid(config);

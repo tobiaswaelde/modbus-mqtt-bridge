@@ -5,6 +5,7 @@
 /node_modules
 /docs/node_modules
 /docs/.vitepress/dist
+/docs/.vitepress/.temp
 /docs/.vitepress/cache
 
 # Local runtime config and secrets
