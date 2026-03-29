@@ -1,26 +1,14 @@
 # Deployment
 
-This project supports multiple deployment paths depending on your environment.
+This page covers practical deployment patterns from local Docker runs to production hosts.
 
-## Container Deployment
+## Recommended default: Docker Compose
 
-::: code-group
-
-```bash [docker compose (recommended)]
+```bash
 docker compose up --build -d
 ```
 
-```bash [docker run]
-docker run --rm \
-  --name modbus-mqtt-bridge \
-  -v "$(pwd)/config:/app/config:ro" \
-  ghcr.io/tobiaswaelde/modbus-mqtt-bridge:latest \
-  --config /app/config/config.yml
-```
-
-:::
-
-Example `docker-compose.yml`:
+Compose service (from repository):
 
 ```yaml
 services:
@@ -33,30 +21,58 @@ services:
     command: ["--config", "/app/config/config.yml"]
 ```
 
-Why this is usually the best default:
+Why this is the default:
 
-- simple, reproducible setup
-- healthcheck built in
-- `config/` mounted from host for easy runtime edits
+- reproducible setup across environments
+- host-mounted config for easy updates
+- built-in healthcheck in container image
 
-## GHCR Image
-
-The repository publishes a Docker image via GitHub Actions:
-
-- workflow: `.github/workflows/docker.yml`
-- image name: `ghcr.io/<owner>/<repo>`
-
-Example pull/run:
+## Direct image deployment (GHCR)
 
 ```bash
 docker pull ghcr.io/tobiaswaelde/modbus-mqtt-bridge:latest
 ```
 
-## Bare-metal / VM
+```bash
+docker run --rm \
+  --name modbus-mqtt-bridge \
+  -v "$(pwd)/config:/app/config:ro" \
+  ghcr.io/tobiaswaelde/modbus-mqtt-bridge:latest \
+  --config /app/config/config.yml
+```
 
-Run directly as a binary when containers are not desired:
+## Binary deployment (no container runtime)
 
 ```bash
 cargo build --release
 ./target/release/modbus-mqtt-bridge --config config/config.yml
 ```
+
+Use this when you prefer host-level service management (`systemd`, supervisord, etc.).
+
+## Runtime checks
+
+Manual healthcheck command:
+
+```bash
+modbus-mqtt-bridge --healthcheck --config config/config.yml
+```
+
+Recommended operational checks:
+
+- config file exists and parses (`.yml/.yaml/.json`)
+- MQTT DNS/TCP reachability from runtime host
+- writable points subscribe to `.../set` as expected
+
+## Upgrade flow
+
+1. Pull new image tag (or build new binary).
+2. Keep `config/config.yml` stable and versioned.
+3. Restart the service.
+4. Confirm healthcheck and MQTT message flow.
+
+## Production notes
+
+- Set `logging.json: true` for structured log pipelines.
+- Prefer explicit version tags over `latest` in controlled environments.
+- Back up your config repository and change history.

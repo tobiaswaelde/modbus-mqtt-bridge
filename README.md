@@ -1,70 +1,87 @@
-# Modbus MQTT Bridge
+<div align="center">
+  <img src="docs/public/logo.svg" alt="Modbus MQTT Bridge" width="120" />
 
-[![Test](https://github.com/tobiaswaelde/modbus-mqtt-bridge/actions/workflows/test.yml/badge.svg)](https://github.com/tobiaswaelde/modbus-mqtt-bridge/actions/workflows/test.yml)
-[![Docker](https://github.com/tobiaswaelde/modbus-mqtt-bridge/actions/workflows/docker.yml/badge.svg)](https://github.com/tobiaswaelde/modbus-mqtt-bridge/actions/workflows/docker.yml)
-[![Version](https://img.shields.io/badge/version-1.0.0-blue.svg)](https://github.com/tobiaswaelde/modbus-mqtt-bridge/blob/master/Cargo.toml)
-[![Built with AI](https://img.shields.io/badge/built%20with-AI-0a7ea4.svg)](https://openai.com/)
+  # Modbus MQTT Bridge
 
-Rust bridge between Modbus TCP and MQTT.  
-It polls Modbus points, publishes state values, and handles writes via matching MQTT `/set` topics.
+  [![Test](https://github.com/tobiaswaelde/modbus-mqtt-bridge/actions/workflows/test.yml/badge.svg)](https://github.com/tobiaswaelde/modbus-mqtt-bridge/actions/workflows/test.yml)
+  [![Docker](https://github.com/tobiaswaelde/modbus-mqtt-bridge/actions/workflows/docker.yml/badge.svg)](https://github.com/tobiaswaelde/modbus-mqtt-bridge/actions/workflows/docker.yml)
+  [![Version](https://img.shields.io/badge/version-1.0.0-blue.svg)](https://github.com/tobiaswaelde/modbus-mqtt-bridge/blob/master/Cargo.toml)
+  [![License](https://img.shields.io/badge/license-GPL--3.0--or--later-blue.svg)](https://github.com/tobiaswaelde/modbus-mqtt-bridge/blob/master/LICENSE)
 
-## 🌐 Documentation
+  Rust bridge between Modbus TCP devices and MQTT topics.
 
-Full docs website: **https://tobiaswaelde.github.io/modbus-mqtt-bridge/**
+  [Documentation](https://tobiaswaelde.github.io/modbus-mqtt-bridge/) |
+  [Getting Started](https://tobiaswaelde.github.io/modbus-mqtt-bridge/getting-started) |
+  [Configuration](https://tobiaswaelde.github.io/modbus-mqtt-bridge/configuration) |
+  [Deployment](https://tobiaswaelde.github.io/modbus-mqtt-bridge/deployment)
+</div>
 
-Recommended entry points:
+## Why this project
 
-- [Getting Started](https://tobiaswaelde.github.io/modbus-mqtt-bridge/getting-started)
-- [Configuration](https://tobiaswaelde.github.io/modbus-mqtt-bridge/configuration)
-- [Deployment](https://tobiaswaelde.github.io/modbus-mqtt-bridge/deployment)
-- [Troubleshooting](https://tobiaswaelde.github.io/modbus-mqtt-bridge/troubleshooting)
+`modbus-mqtt-bridge` continuously polls Modbus points and publishes raw JSON values to MQTT state topics. It also accepts writes through matching `/set` topics and forwards those writes back to Modbus.
 
-Project history: [CHANGELOG.md](/mnt/projects/tmp/modbus-test/CHANGELOG.md)
+Use it when you want one stable integration layer between PLCs/inverters/meters and systems like Home Assistant, Node-RED, or custom MQTT consumers.
 
-## ✨ Highlights
+## Features
 
-- Multi-source Modbus TCP polling
-- MQTT state + `/set` write contract
-- Robust reconnect/retry behavior
-- Docker-ready runtime and healthcheck
-- GitHub Actions for test, image publish, release, and pages
+- Multi-source Modbus TCP polling (independent poll loops per source)
+- Predictable MQTT topic contract (`state` + `/set`)
+- Typed decode/encode (`bool`, `u16`, `i16`, `u32`, `i32`, `f32`, `string`, `raw_u16`)
+- Retry/backoff knobs for Modbus reads/writes
+- Built-in healthcheck mode for container orchestration
+- Docker-ready (small `scratch` runtime image)
 
-## 🗂️ Topic Contract
+## Quick start
 
-For `base_topic=modbus`, `source_id=example-device`, `topic=telemetry/example_float`:
+### 1. Run with Docker Compose (recommended)
 
-- State topic: `modbus/example-device/telemetry/example_float`
-- Set topic: `modbus/example-device/telemetry/example_float/set`
+```bash
+git clone https://github.com/tobiaswaelde/modbus-mqtt-bridge.git
+cd modbus-mqtt-bridge
+cp config/config.example.yml config/config.yml
+# edit config/config.yml for your broker and devices
 
-State payloads are raw JSON values:
+docker compose up --build -d
+```
+
+### 2. Verify data flow
+
+```bash
+mosquitto_sub -h <mqtt-host> -t 'modbus/#' -v
+```
+
+Optional write test:
+
+```bash
+mosquitto_pub -h <mqtt-host> -t 'modbus/example-device/status/example_coil/set' -m true
+```
+
+## Topic contract
+
+For:
+
+- `base_topic = modbus`
+- `source.id = boiler`
+- `point.topic = telemetry/temp`
+
+Topics:
+
+- State: `modbus/boiler/telemetry/temp`
+- Write: `modbus/boiler/telemetry/temp/set`
+
+Write payloads accepted:
 
 ```json
-21.5
-```
-
-Set payloads can be raw or wrapped:
-
-```json
-true
+42.5
 ```
 
 ```json
-{"value": 18.0}
+{"value": 42.5}
 ```
 
-## ⚙️ Configuration
+## Minimal configuration
 
-Default config path:
-
-```text
-config/config.yml
-```
-
-If it does not exist, the service auto-creates a starter template.
-
-Minimal example:
-
-```yml
+```yaml
 mqtt:
   host: localhost
   base_topic: modbus
@@ -81,27 +98,17 @@ sources:
         data_type: f32
 ```
 
-Full config reference:  
-https://tobiaswaelde.github.io/modbus-mqtt-bridge/configuration
+Full config reference: https://tobiaswaelde.github.io/modbus-mqtt-bridge/configuration
 
-## 🚀 Run Locally
+## Run locally (without Docker)
 
 ```bash
 cargo run -- --config config/config.yml
 ```
 
-## 🐳 Run With Docker
+## Documentation
 
-```bash
-docker compose up --build
-```
-
-Deployment guide (Compose, GHCR, VM, Pages):  
-https://tobiaswaelde.github.io/modbus-mqtt-bridge/deployment
-
-## 📚 Docs Development
-
-Docs are built with VitePress from `docs/`:
+Docs are built with VitePress from `docs/`.
 
 ```bash
 cd docs
@@ -109,9 +116,21 @@ npm install
 npm run dev
 ```
 
-GitHub Pages publishes `docs/.vitepress/dist` via `.github/workflows/pages.yml`.
+Production docs are published via GitHub Pages from `.github/workflows/pages.yml`.
 
-## ⚖️ License
+## Project files
 
-Licensed under **GNU GPL v3.0 or later** (`GPL-3.0-or-later`).  
-See [LICENSE](/mnt/projects/tmp/modbus-test/LICENSE).
+- `src/` runtime and protocol logic
+- `config/config.example.yml` starter config template
+- `docs/` VitePress documentation source
+- `Dockerfile` multi-stage build with `scratch` runtime
+- `compose.yml` local deployment template
+
+## Changelog
+
+See [CHANGELOG.md](CHANGELOG.md).
+
+## License
+
+Licensed under **GNU GPL v3.0 or later** (`GPL-3.0-or-later`).
+See [LICENSE](LICENSE).
