@@ -40,7 +40,7 @@ const config = defineConfig({
     ],
     footer: {
       message: "Released under GPL-3.0-or-later",
-      copyright: "Copyright 2026 Modbus MQTT Bridge"
+      copyright: "Copyright 2026 Tobias Wälde (https://tobiaswaelde.com)"
     }
   }
 });
