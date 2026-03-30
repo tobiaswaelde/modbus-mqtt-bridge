@@ -72,6 +72,141 @@ fn loads_json_config_and_validates() {
 }
 
 #[test]
+fn validate_rejects_duplicate_source_ids() {
+    let path = unique_temp_file("config_invalid_duplicate_source", "yml");
+    let raw = r#"
+mqtt:
+  host: localhost
+sources:
+  - id: source-a
+    host: 127.0.0.1
+    unit_id: 1
+    points:
+      - name: p1
+        topic: t1
+        address: 0
+        kind: holding
+        data_type: u16
+  - id: source-a
+    host: 127.0.0.2
+    unit_id: 1
+    points:
+      - name: p2
+        topic: t2
+        address: 1
+        kind: holding
+        data_type: u16
+"#;
+    fs::write(&path, raw).expect("write config");
+    let config = AppConfig::load(&path).expect("load config");
+    let error = config.validate().expect_err("validation should fail");
+    assert!(error.to_string().contains("duplicate source id"));
+    let _ = fs::remove_file(path);
+}
+
+#[test]
+fn validate_rejects_duplicate_point_topics_per_source() {
+    let path = unique_temp_file("config_invalid_duplicate_topic", "yml");
+    let raw = r#"
+mqtt:
+  host: localhost
+sources:
+  - id: source-a
+    host: 127.0.0.1
+    unit_id: 1
+    points:
+      - name: p1
+        topic: telemetry/temp
+        address: 0
+        kind: holding
+        data_type: u16
+      - name: p2
+        topic: telemetry/temp
+        address: 1
+        kind: holding
+        data_type: u16
+"#;
+    fs::write(&path, raw).expect("write config");
+    let config = AppConfig::load(&path).expect("load config");
+    let error = config.validate().expect_err("validation should fail");
+    assert!(error.to_string().contains("duplicate point topic"));
+    let _ = fs::remove_file(path);
+}
+
+#[test]
+fn validate_rejects_wildcard_topics() {
+    let path = unique_temp_file("config_invalid_wildcard_topic", "yml");
+    let raw = r#"
+mqtt:
+  host: localhost
+sources:
+  - id: source-a
+    host: 127.0.0.1
+    unit_id: 1
+    points:
+      - name: p1
+        topic: telemetry/#
+        address: 0
+        kind: holding
+        data_type: u16
+"#;
+    fs::write(&path, raw).expect("write config");
+    let config = AppConfig::load(&path).expect("load config");
+    let error = config.validate().expect_err("validation should fail");
+    assert!(error.to_string().contains("must not contain MQTT wildcards"));
+    let _ = fs::remove_file(path);
+}
+
+#[test]
+fn validate_rejects_set_suffix_in_point_topic() {
+    let path = unique_temp_file("config_invalid_set_suffix", "yml");
+    let raw = r#"
+mqtt:
+  host: localhost
+sources:
+  - id: source-a
+    host: 127.0.0.1
+    unit_id: 1
+    points:
+      - name: p1
+        topic: telemetry/temp/set
+        address: 0
+        kind: holding
+        data_type: u16
+"#;
+    fs::write(&path, raw).expect("write config");
+    let config = AppConfig::load(&path).expect("load config");
+    let error = config.validate().expect_err("validation should fail");
+    assert!(error.to_string().contains("must not end with '/set'"));
+    let _ = fs::remove_file(path);
+}
+
+#[test]
+fn validate_rejects_zero_poll_interval() {
+    let path = unique_temp_file("config_invalid_poll_interval", "yml");
+    let raw = r#"
+mqtt:
+  host: localhost
+sources:
+  - id: source-a
+    host: 127.0.0.1
+    unit_id: 1
+    poll_interval_ms: 0
+    points:
+      - name: p1
+        topic: t1
+        address: 0
+        kind: holding
+        data_type: u16
+"#;
+    fs::write(&path, raw).expect("write config");
+    let config = AppConfig::load(&path).expect("load config");
+    let error = config.validate().expect_err("validation should fail");
+    assert!(error.to_string().contains("poll_interval_ms must be greater than 0"));
+    let _ = fs::remove_file(path);
+}
+
+#[test]
 fn register_count_defaults_follow_data_type() {
     let point = PointConfig {
         name: "demo".into(),

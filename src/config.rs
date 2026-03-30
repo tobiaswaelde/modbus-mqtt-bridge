@@ -1,4 +1,4 @@
-use std::{fs, path::Path};
+use std::{collections::HashSet, fs, path::Path};
 
 use anyhow::{Context, Result, bail};
 use serde::Deserialize;
@@ -42,19 +42,102 @@ impl AppConfig {
 
     /// Validates cross-field constraints that cannot be expressed via serde alone.
     pub fn validate(&self) -> Result<()> {
+        if self.mqtt.host.trim().is_empty() {
+            bail!("mqtt.host must not be empty");
+        }
+        if self.mqtt.port == 0 {
+            bail!("mqtt.port must be greater than 0");
+        }
+        if self.mqtt.client_id.trim().is_empty() {
+            bail!("mqtt.client_id must not be empty");
+        }
+        if self.mqtt.base_topic.trim().is_empty() {
+            bail!("mqtt.base_topic must not be empty");
+        }
+        if topic_has_wildcards(&self.mqtt.base_topic) {
+            bail!("mqtt.base_topic must not contain MQTT wildcards '+' or '#'");
+        }
+        if self.mqtt.keep_alive_secs == 0 {
+            bail!("mqtt.keep_alive_secs must be greater than 0");
+        }
+
         if self.sources.is_empty() {
             bail!("config must contain at least one source");
         }
 
+        let mut source_ids = HashSet::new();
         for source in &self.sources {
+            if source.id.trim().is_empty() {
+                bail!("source id must not be empty");
+            }
+            if !source_ids.insert(source.id.as_str()) {
+                bail!("duplicate source id '{}'", source.id);
+            }
+            if source.host.trim().is_empty() {
+                bail!("source '{}' host must not be empty", source.id);
+            }
+            if source.port == 0 {
+                bail!("source '{}' port must be greater than 0", source.id);
+            }
+            if source.poll_interval_ms == 0 {
+                bail!("source '{}' poll_interval_ms must be greater than 0", source.id);
+            }
+            if source.request_timeout_ms == 0 {
+                bail!(
+                    "source '{}' request_timeout_ms must be greater than 0",
+                    source.id
+                );
+            }
+            if source.modbus_retries > 0 && source.modbus_retry_backoff_ms == 0 {
+                bail!(
+                    "source '{}' modbus_retry_backoff_ms must be greater than 0 when modbus_retries > 0",
+                    source.id
+                );
+            }
+
             // A source without points is almost always a configuration mistake.
             if source.points.is_empty() {
                 bail!("source '{}' must define at least one point", source.id);
+            }
+
+            let mut point_topics = HashSet::new();
+            for point in &source.points {
+                if point.name.trim().is_empty() {
+                    bail!("source '{}' has a point with empty name", source.id);
+                }
+                if point.topic.trim().is_empty() {
+                    bail!("source '{}' point '{}' has an empty topic", source.id, point.name);
+                }
+                if topic_has_wildcards(&point.topic) {
+                    bail!(
+                        "source '{}' point '{}' topic must not contain MQTT wildcards '+' or '#'",
+                        source.id,
+                        point.name
+                    );
+                }
+                if point.topic.trim_matches('/').ends_with("/set") {
+                    bail!(
+                        "source '{}' point '{}' topic must not end with '/set'",
+                        source.id,
+                        point.name
+                    );
+                }
+                if !point_topics.insert(point.topic.as_str()) {
+                    bail!(
+                        "source '{}' has duplicate point topic '{}'",
+                        source.id,
+                        point.topic
+                    );
+                }
             }
         }
 
         Ok(())
     }
+}
+
+fn topic_has_wildcards(topic: &str) -> bool {
+    topic.contains('+') || topic.contains('#')
 }
 
 /// MQTT connection and topic settings.

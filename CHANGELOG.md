@@ -13,6 +13,22 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Fixed
 
+## [1.0.1] - 2026-03-30
+
+### Added
+
+- Release workflow now builds and pushes Docker images to GitHub Container Registry (`ghcr.io`) on tag releases.
+
+### Changed
+
+- Strengthened runtime config validation with checks for empty/invalid MQTT and source fields.
+- Added validation for duplicate source IDs and duplicate point topics per source.
+- Added validation for invalid MQTT topic patterns (wildcards and `/set` suffix in point topics).
+
+### Fixed
+
+- Prevented invalid zero-valued polling/timeout config values from being accepted.
+
 ## [1.0.0] - 2026-03-25
 
 ### Added
