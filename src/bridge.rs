@@ -1,7 +1,7 @@
 use std::{future::Future, net::SocketAddr, sync::Arc, time::Duration};
 
 use anyhow::{Context, Result, anyhow, bail};
-use rumqttc::{AsyncClient, Event, EventLoop, Incoming, MqttOptions, Publish, QoS};
+use rumqttc::{AsyncClient, ClientError, Event, EventLoop, Incoming, MqttOptions, Publish, QoS};
 use serde_json::Value;
 use tokio::{net::TcpStream, sync::mpsc, time};
 use tokio_modbus::{client::tcp, prelude::*};
@@ -92,32 +92,62 @@ fn mqtt_options(config: &AppConfig) -> MqttOptions {
     options
 }
 
-async fn subscribe_to_rpc_topics(client: &AsyncClient, config: &AppConfig) -> Result<()> {
+#[derive(Debug, Clone)]
+struct RpcSubscription {
+    source_id: String,
+    point_name: String,
+    topic: String,
+}
+
+fn rpc_subscriptions(config: &AppConfig) -> Vec<RpcSubscription> {
+    let mut subscriptions = Vec::new();
     for source in &config.sources {
         for point in &source.points {
             if !point.access.can_write() {
                 continue;
             }
-            // Writable points expose a corresponding `<state-topic>/set` subscription.
-            let topic = set_topic(&config.mqtt.base_topic, &source.id, &point.topic);
-            client
-                .subscribe(topic.clone(), QoS::AtLeastOnce)
-                .await
-                .with_context(|| {
-                    format!(
-                        "failed to subscribe to set topic '{}' for source '{}' point '{}'",
-                        topic, source.id, point.name
-                    )
-                })?;
-            info!(
-                source = source.id,
-                point = point.name,
-                topic,
-                "subscribed to set topic"
-            );
+            subscriptions.push(RpcSubscription {
+                source_id: source.id.clone(),
+                point_name: point.name.clone(),
+                topic: set_topic(&config.mqtt.base_topic, &source.id, &point.topic),
+            });
         }
     }
-    Ok(())
+    subscriptions
+}
+
+fn enqueue_rpc_subscriptions(
+    client: &AsyncClient,
+    subscriptions: &[RpcSubscription],
+    next_index: &mut usize,
+) -> Result<bool> {
+    while *next_index < subscriptions.len() {
+        let subscription = &subscriptions[*next_index];
+        match client.try_subscribe(subscription.topic.clone(), QoS::AtLeastOnce) {
+            Ok(()) => {
+                info!(
+                    source = subscription.source_id,
+                    point = subscription.point_name,
+                    topic = subscription.topic,
+                    "subscribed to set topic"
+                );
+                *next_index += 1;
+            }
+            Err(ClientError::TryRequest(_)) => {
+                // Request queue is currently busy/full; keep polling and retry later.
+                return Ok(false);
+            }
+            Err(error) => {
+                return Err(error).with_context(|| {
+                    format!(
+                        "failed to enqueue set topic '{}' for source '{}' point '{}'",
+                        subscription.topic, subscription.source_id, subscription.point_name
+                    )
+                });
+            }
+        }
+    }
+    Ok(true)
 }
 
 async fn drive_mqtt_event_loop(
@@ -126,19 +156,40 @@ async fn drive_mqtt_event_loop(
     rpc_tx: mpsc::Sender<RpcCommand>,
     config: &AppConfig,
 ) -> Result<()> {
+    let subscriptions = rpc_subscriptions(config);
+    let mut subscriptions_pending = false;
+    let mut next_subscription_index = 0usize;
+
     loop {
+        if subscriptions_pending {
+            match enqueue_rpc_subscriptions(&client, &subscriptions, &mut next_subscription_index) {
+                Ok(true) => {
+                    subscriptions_pending = false;
+                    next_subscription_index = 0;
+                }
+                Ok(false) => {}
+                Err(error) => {
+                    warn!(error = ?error, "failed to enqueue rpc subscriptions");
+                }
+            }
+        }
+
         match event_loop.poll().await {
             Ok(Event::Incoming(Incoming::Publish(publish))) => {
                 // Forward valid `/set` payloads to the write worker.
                 if let Some(command) = decode_rpc_publish(config, publish)? {
-                    rpc_tx.send(command).await?;
+                    let rpc_tx = rpc_tx.clone();
+                    tokio::spawn(async move {
+                        if rpc_tx.send(command).await.is_err() {
+                            warn!("dropping rpc command because write queue is closed");
+                        }
+                    });
                 }
             }
             Ok(Event::Incoming(Incoming::ConnAck(_))) => {
                 info!("connected to mqtt broker");
-                if let Err(error) = subscribe_to_rpc_topics(&client, config).await {
-                    warn!(error = ?error, "failed to resubscribe rpc topics after mqtt connect");
-                }
+                subscriptions_pending = !subscriptions.is_empty();
+                next_subscription_index = 0;
             }
             Ok(Event::Outgoing(_)) | Ok(Event::Incoming(_)) => {}
             Err(error) => {

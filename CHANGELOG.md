@@ -13,6 +13,17 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Fixed
 
+## [1.0.2] - 2026-04-25
+
+### Added
+
+### Changed
+
+### Fixed
+
+- Prevented the MQTT event loop from stalling after reconnect when subscription requests are queued under load.
+- Made `/set` command forwarding non-blocking in the MQTT event loop to avoid head-of-line blocking.
+
 ## [1.0.1] - 2026-03-30
 
 ### Added

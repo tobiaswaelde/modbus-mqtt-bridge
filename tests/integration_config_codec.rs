@@ -153,7 +153,11 @@ sources:
     fs::write(&path, raw).expect("write config");
     let config = AppConfig::load(&path).expect("load config");
     let error = config.validate().expect_err("validation should fail");
-    assert!(error.to_string().contains("must not contain MQTT wildcards"));
+    assert!(
+        error
+            .to_string()
+            .contains("must not contain MQTT wildcards")
+    );
     let _ = fs::remove_file(path);
 }
 
@@ -202,7 +206,11 @@ sources:
     fs::write(&path, raw).expect("write config");
     let config = AppConfig::load(&path).expect("load config");
     let error = config.validate().expect_err("validation should fail");
-    assert!(error.to_string().contains("poll_interval_ms must be greater than 0"));
+    assert!(
+        error
+            .to_string()
+            .contains("poll_interval_ms must be greater than 0")
+    );
     let _ = fs::remove_file(path);
 }
 

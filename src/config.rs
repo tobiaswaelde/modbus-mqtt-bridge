@@ -80,7 +80,10 @@ impl AppConfig {
                 bail!("source '{}' port must be greater than 0", source.id);
             }
             if source.poll_interval_ms == 0 {
-                bail!("source '{}' poll_interval_ms must be greater than 0", source.id);
+                bail!(
+                    "source '{}' poll_interval_ms must be greater than 0",
+                    source.id
+                );
             }
             if source.request_timeout_ms == 0 {
                 bail!(
@@ -106,7 +109,11 @@ impl AppConfig {
                     bail!("source '{}' has a point with empty name", source.id);
                 }
                 if point.topic.trim().is_empty() {
-                    bail!("source '{}' point '{}' has an empty topic", source.id, point.name);
+                    bail!(
+                        "source '{}' point '{}' has an empty topic",
+                        source.id,
+                        point.name
+                    );
                 }
                 if topic_has_wildcards(&point.topic) {
                     bail!(
